@@ -113,69 +113,83 @@ The table below summarizes the reduced models, where the reductions are
 | $\alpha^{\textrm{spec}} = \alpha^{\textrm{sens}}$ | unbiased | D |
 | $\alpha_j = \alpha_j'$ | identical raters | E |
 
+
+The first list contains models that model bias by splitting accuracy into sensitivity and specificity components.  Models without a sensitivity versus specificity distinction make sense when the categories are not ordered.  For example, asking consumers which brand is their favorite between two brands at a time, the labels 0 and 1 are arbitrary, and sensitivity should be equal to specificity.  The following models do not distinguish sensitivty and specificity.
+
+\begin{equation}
+\begin{array}{cc}
+\textrm{Reductions} & \textrm{Probability Correct} \\ \hline
+D
+& \lambda_i + (1 - \lambda_i) \cdot \textrm{logit}^{-1}(\delta_i \cdot (\alpha_j - \beta_i))
+\\ 
+CD
+& \lambda_i + (1 - \lambda_i) \cdot \textrm{logit}^{-1}(\delta_i \cdot \alpha_j)
+\\
+BD
+& \lambda_i + (1 - \lambda_i) \cdot \textrm{logit}^{-1}(\alpha_j - \beta_i)
+\\ \hline
+BCD
+& \lambda_i + (1 - \lambda_i) \cdot \textrm{logit}^{-1}(\alpha_j)
+\\
+AD
+& \textrm{logit}^{-1}(\delta_i \cdot (\alpha_j - \beta_i))
+\\
+ACD
+& \textrm{logit}^{-1}(\delta_i \cdot \alpha_j)
+\\ \hline
+ABD
+& \textrm{logit}^{-1}(\alpha_j - \beta_i)
+\\
+ABCD
+& \textrm{logit}^{-1}(\alpha_j)
+\\
+ABCDE
+& \textrm{logit}^{-1}(\alpha)
+\end{array}
+\end{equation}
+The final model in the list is the only model that does not distinguish among the raters, using a single accuracy parameter.
+
+The following models introduce separate parameters for sensitivity and specifity rather than assuming they are the same.
 \begin{equation}
 \begin{array}{cc}
 \textrm{Reductions} & \textrm{Probability Correct} \\ \hline
 & \lambda_i + (1 - \lambda_i) \cdot \textrm{logit}^{-1}(\delta_i \cdot (\alpha^k_j - \beta_i))
 \\
-D
-& \lambda_i + (1 - \lambda_i) \cdot \textrm{logit}^{-1}(\delta_i \cdot (\alpha_j - \beta_i))
-\\ 
 C
 & \lambda_i + (1 - \lambda_i) \cdot \textrm{logit}^{-1}(\delta_i \cdot \alpha^k_j)
-\\ \hline
-CD
-& \lambda_i + (1 - \lambda_i) \cdot \textrm{logit}^{-1}(\delta_i \cdot \alpha_j)
 \\
-B
-& \lambda_i + (1 - \lambda_i) \cdot \textrm{logit}^{-1}(\alpha^k_j - \beta_i)
-\\
-BD
-& \lambda_i + (1 - \lambda_i) \cdot \textrm{logit}^{-1}(\alpha_j - \beta_i)
-\\ \hline
 BC
 & \lambda_i + (1 - \lambda_i) \cdot \textrm{logit}^{-1}(\alpha^k_j)
-\\
-BCD
-& \lambda_i + (1 - \lambda_i) \cdot \textrm{logit}^{-1}(\alpha_j)
-\\
+\\ \hline
 A
 & \textrm{logit}^{-1}(\delta_i \cdot (\alpha^k_j - \beta_i))
-\\ \hline
-AD
-& \textrm{logit}^{-1}(\delta_i \cdot (\alpha_j - \beta_i))
 \\
 AC
 & \textrm{logit}^{-1}(\delta_i \cdot \alpha^k_j)
 \\
-ACD
-& \textrm{logit}^{-1}(\delta_i \cdot \alpha_j)
-\\ \hline
 AB
 & \textrm{logit}^{-1}(\alpha^k_j - \beta_i)
-\\
-ABD
-& \textrm{logit}^{-1}(\alpha_j - \beta_i)
-\\
-ABDE
-& \textrm{logit}^{-1}(- \beta_i) \quad
 \\ \hline
 ABC
 & \textrm{logit}^{-1}(\alpha^k_j)
 \\
 ABCE
 & \textrm{logit}^{-1}(\alpha^k)
-\\
-ABCD
-& \textrm{logit}^{-1}(\alpha_j)
+\end{array}
+\end{equation}
+The final model in this list has a single sensitivity and specificity for all raters, whereas the other models have varying effects.
+
+There is a single model that does not use any notion of rating accuracy at all, relying solely on item effects.
+\begin{equation}
+\begin{array}{cc}
+\textrm{Reductions} & \textrm{Probability Correct} \\ \hline
+ABDE
+& \textrm{logit}^{-1}(- \beta_i) \quad
 \\ \hline
-ABCDE
-& \textrm{logit}^{-1}(\alpha)
 \end{array}
 \end{equation}
 
-The following models are redundant in the sense that they reduce to other models, often by introducing an additive and/or multiplicative non-identifiability.  In all of these cases, the reduction is to a single item effect after removing non-identifiability.
-
+The remaining models are all redundant in the sense that fixing their non-identifiability issues reduces to a model with a single item effect.
 \begin{equation}
 \begin{array}{ccc}
 \textrm{Reductions} & \textrm{Probability Correct} \\ \hline
