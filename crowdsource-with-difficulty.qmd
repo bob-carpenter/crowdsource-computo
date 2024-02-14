@@ -1,6 +1,6 @@
 ---
-title: "Bayesian Crowdsourcing for Items of Varying Difficulty"
-subtitle: ""
+title: "A Binary Rating Model for Heterogeneous Items"
+subtitle: "Adjusting for item difficulty, discriminativeness, and guessability"
 author:
   - name: Bob Carpenter
     corresponding: true
@@ -15,7 +15,7 @@ date: last-modified
 date-modified: last-modified
 description: |
 abstract: >+
-  Dawid and Skene's crowdsourcing model fails to capture important distributional properties of real rating data.  By adding a random effect for item difficulty, motivated by the item-response theory one-parameter logistic models (IRT-1PL), the dispersion of rating data can be captured.  This is illustrated with data from dental image classification and natural language inference.
+  Dawid and Skene's crowdsourcing model fails to capture important distributional properties of real rating data.  By adding effects for difficulty, discriminativeness, and guessability, the annotation model is able to more closely model the true data generating process.  This is illustrated with data from dental image classification and natural language inference.
 keywords: [rating, coding, Bayesian, IRT, Stan, Python, Dawid-Skene]
 citation:
   type: article-journal
@@ -36,6 +36,189 @@ jupyter: python3
 ---
 
 # Introduction
+
+This note considers the rating problem for classification.  An example analyzed later is a data set of roughly dental 4000 X-rays, each of which is rated by 5 dentists as to whether the patient had caries (a kind of pre-cavity).  The dentists showed surprisingly little agreement, with only 100 X-rays having consensus of caries being present.  The dentists also varied dramatically in the number of cases each rated as having caries.  There are several goals for a rating mode, wuch as combining ratings into a consensus analysis, analyzing the accuracy and bias of the individual raters, analyzing the difficulty of the rating task, and analyzing the prevalence of caries among the population represented by the X-rays.  The results may also be used to guide active learning in data acquisition by assessing the information gain from gathering a rating from either a known or a new rater.
+
+One of the main applications is in crowdsourcing, where typically untrained or lightly trained workers perform bulk ratings of highly variable quality.  But these models are equally useful when applied to expert ratings, where expertise is measured in terms of rating accuracy and bias.
+
+Rating models show up in multiple fields from educational testing, from where we will draw much of the inspiration for the contribution here, in epidemiology where they are applied to diagnostic tests, in sociology where they are applied to exploring cultural norms, and in data curation for machine learning where they are applied to human feedback on classification or other problems.  As one example, human tags on images are used to train large-scale image classifiers like ImageNet, which has over a million images classified into a thousand classes.  As another example, crowdsourced ratings of language model output are used as a fine-tuning step that adjusts a foundational large language model like GPT-4, which is trained to complete text, into a chatbot like ChatGPT that is (imperfectly) trained to be helpful, truthful, and harmless.
+
+
+# A General Crowdsourcing Model
+
+This section presents the most general crowdsourcing model, then considers how it may be simplified by removing features.  Removing features here amounts to tying parameters, such as assuming all raters have the same accuracy or all items have the same difficulty.
+
+## The rating data
+
+Consider a crowdsourcing problem for which there are $I \in \mathbb{N}$ items to rate and $J \in \mathbb{N}$ raters to do the rating.  Long-form data will be used to accomodate there being a varying number of raters per item and a varying number of items per rater.  let $N \in \mathbb{N}$ be the number of ratings $\textrm{rating}_n \in \{0, 1 \}$, each of which is equipped with a rater $\textrm{rater}_n \in 1:J$ and item being rated $\textrm{item}_n \in 1:I$.
+
+For each item $i$, suppose there are covariates $x_i \in \mathbb{R}^K$.  Then $x \in \mathbb{R}^{I \times K}$ is the full data matrix and $x_i$ is naturally considered a row vector.  In the simplest case, $K = 1$ and $x$ is a single column of 1 values representing an intercept.  In the more general case, other features may denote information relevant for classifying the item, such as the pixels of an image for image classification, demographic information for predicting a vote in an election, or medical test results for predicting a medical condition.
+
+## The complete data likelihood
+
+The foundation of the model is a diagnostic testing sensitivity and specificity model, which is widely used in epidemiology.  This simple foundation is extended to adjust for difficulty, discrimination, and guessing using the parameterization of the item-response theory three-parameter logistic (IRT 3PL) model, a widely used educational testing model.
+
+### Latent category marginal likelihood
+
+For each item, let $z_i \in \{ 0, 1 \}$ be its (unobserved/latent) category, with a 1 conventionally denoting "success" or a "positive" result.  The complete data likelihood is complete in the sense that it includes the latent category.  Marginalizing out this category, the technical details and numerical stability of which are deferred until later, leads to the ordinary likelihood function used in the model to avoid challenging inference over discrete parameters.
+
+Let $\beta \in \mathbb{R}^K$ be a vector of (unobserved) regression coefficients.  The marginal likelihood for the category is in the form of a logistic regression,
+\begin{equation}
+z_i \sim \textrm{bernoulli}\!\left(\textrm{logit}^{-1}(x_i \cdot \beta)\right).
+\end{equation}
+An intercept may be included as a column of 1 values in the data matrix.  Other regression models could be substituted for the logistic regression, such as a neural network model.  All that is needed is a way to go from predictors ($x_i$) and parameters ($\beta) to the log odds of a positive (1) outcome ($x_i \cdot \beta$).
+
+### Rating conditional likelihood
+
+The rating from rater $j$ for item $i$ is generated conditionally given the category $z_i$ of an item.  For positive items $z_i = 1$), sensitivity (accuracy on positive items) is used, whereas for negative items ($z_i = 0$), specificity (accuracy on negative items) is used.  Thus every rater $j$ will have a sensitivity $\alpha^{\textrm{sens}}_j \in \mathbb{R}$ and a specificity $\alpha^{\textrm{spec}}_j$ on the log odds scale (it will be adjusted for item difficulty and discriminativeness and then logistically transformed to a probability).  If the sensitivity is higher than the specificity there will be a bias toward 1 ratings, whereas if the specificity is higher than the sensitivity, there is a bias toward 0 ratings.  If the model only has sensitivity and specificity parameters for raters, it reduces to Dawid and Skene's diagnostic testing model.  Fixing $\alpha^{\textrm{sens}} = \alpha^{\textrm{spec}}$ introduces an unbiasedness assumption whereby a rater has equal sensitivities and specificities.
+
+The items are parameterized with a difficulty $\beta_i \in \mathbb{R}$ on the log odds scale.  This difficulty is subtracted form the sensitivity (if $z_i = 1$) or specificity (if $z_i = 0$) as appropriate to give the raw log odds of a correct rating (i.e., a rating matching the true category $z_i$).  Fixing $\beta_i = 0$ introduces the assumption that every item is equally difficult.
+
+Each item is further parameterized with a positive-constrained discrimination parameter $\delta_i \in (0, \infty)$.  This is multiplied by the raw log odds to give a discrimation-adjusted log odds to give a probability of correctly rating the item.  The higher the discrimination, the more likely a rater with ability above the difficulty will get the correct answer and th emore likely a rater with ability below the difficulty will get the incorrect answer.  For educational testing, high discrimation test questions are preferable, but for rating wild type data, low discrimination is also possible when there are low signal data items.  Fixing $\delta_i = 1$ introduces the assumption that the items are equally discriminative.
+
+The final parameter associated with an item is a guessability parameter $\lambda_i \in (0, 1)$, giving the probability that a rater can just "guess" the right answer.  Fixing $\lambda_i = 0$ introduces the assumption that the raters never guess an answer.
+
+The full model follows the IRT-3PL model, where the probability that rater $j$ assigns the correct rating to item $i$ is given by
+\begin{equation}
+y \sim \textrm{binomial}\!\left(\lambda_i + (1 - \lambda_i) \cdot \textrm{logit}^{-1}(\delta_i \cdot (\alpha^k_j - \beta_i))\right),
+\end{equation}
+where $k = \textrm{sens}$ if $z_i = 1$ and $k = \textrm{spec}$ if $z_i = 0.$  To convert to the distribution over rating data, the probability must be flipped when $z_i = 0$ so that a 90\% accurate rating results in a 90% chance of a 0 rating,
+\begin{equation}
+y \sim
+\begin{cases}
+\textrm{binomial}\!\left(\lambda_i + (1 - \lambda_i) \cdot \textrm{logit}^{-1}\!\left(\delta_i \cdot \left(\alpha^\textrm{sens}_j - \beta_i\right)\right)\right)
+& \textrm{if } z_i = 1, \textrm{ and}
+\\[4pt]
+\textrm{binomial}\!\left(1 - \left( \lambda_i + (1 - \lambda_i) \cdot \textrm{logit}^{-1}\!\left(\delta_i \cdot \left(\alpha^\textrm{sens}_j - \beta_i\right)\right)\right)\right)
+& \textrm{if } z_i = 0.
+\end{cases}
+\end{equation}
+The second case ($z_i = 0$) reduces to
+\begin{equation}
+\textrm{binomial}\!\left( \left( 1 - \lambda_i \right)
+                \cdot \left( 1 - \textrm{logit}^{-1}\!\left(\delta_i \cdot \left(\alpha^\textrm{sens}_j - \beta_i\right)\right)\right)\right),
+\end{equation}
+and reduces further to
+\begin{equation}
+\textrm{binomial}\!\left( \left( 1 - \lambda_i \right)
+                \cdot \textrm{logit}^{-1}\!\left(-\delta_i \cdot \left(\alpha^\textrm{sens}_j - \beta_i\right)\right)\right).
+\end{equation}
+The table below summarizes the reduced models, where the reductions are
+
+| Reduction | Description | Tag |
+|:---------:|:-----------:|:---:|
+| $\lambda_i = 0$ |  no guessing | A |
+| $\delta_i = 1$ | equal discrimination | B |
+| $\beta_i = 0$ |equal difficulty | C |
+| $\alpha^{\textrm{spec}} = \alpha^{\textrm{sens}}$ | unbiased | D |
+| $\alpha_j = \alpha_j'$ | identical raters | E |
+
+\begin{equation}
+\begin{array}{cc}
+\textrm{Reductions} & \textrm{Probability Correct} \\ \hline
+& \lambda_i + (1 - \lambda_i) \cdot \textrm{logit}^{-1}(\delta_i \cdot (\alpha^k_j - \beta_i))
+\\
+D
+& \lambda_i + (1 - \lambda_i) \cdot \textrm{logit}^{-1}(\delta_i \cdot (\alpha_j - \beta_i))
+\\ 
+C
+& \lambda_i + (1 - \lambda_i) \cdot \textrm{logit}^{-1}(\delta_i \cdot \alpha^k_j)
+\\ \hline
+CD
+& \lambda_i + (1 - \lambda_i) \cdot \textrm{logit}^{-1}(\delta_i \cdot \alpha_j)
+\\
+B
+& \lambda_i + (1 - \lambda_i) \cdot \textrm{logit}^{-1}(\alpha^k_j - \beta_i)
+\\
+BD
+& \lambda_i + (1 - \lambda_i) \cdot \textrm{logit}^{-1}(\alpha_j - \beta_i)
+\\ \hline
+BC
+& \lambda_i + (1 - \lambda_i) \cdot \textrm{logit}^{-1}(\alpha^k_j)
+\\
+BCD
+& \lambda_i + (1 - \lambda_i) \cdot \textrm{logit}^{-1}(\alpha_j)
+\\
+A
+& \textrm{logit}^{-1}(\delta_i \cdot (\alpha^k_j - \beta_i))
+\\ \hline
+AD
+& \textrm{logit}^{-1}(\delta_i \cdot (\alpha_j - \beta_i))
+\\
+AC
+& \textrm{logit}^{-1}(\delta_i \cdot \alpha^k_j)
+\\
+ACD
+& \textrm{logit}^{-1}(\delta_i \cdot \alpha_j)
+\\ \hline
+AB
+& \textrm{logit}^{-1}(\alpha^k_j - \beta_i)
+\\
+ABD
+& \textrm{logit}^{-1}(\alpha_j - \beta_i)
+\\
+ABDE
+& \textrm{logit}^{-1}(- \beta_i) \quad
+\\ \hline
+ABC
+& \textrm{logit}^{-1}(\alpha^k_j)
+\\
+ABCE
+& \textrm{logit}^{-1}(\alpha^k)
+\\
+ABCD
+& \textrm{logit}^{-1}(\alpha_j)
+\\ \hline
+ABCDE
+& \textrm{logit}^{-1}(\alpha)
+\end{array}
+\end{equation}
+
+The following models are redundant in the sense that they reduce to other models, often by introducing an additive and/or multiplicative non-identifiability.  In all of these cases, the reduction is to a single item effect after removing non-identifiability.
+
+\begin{equation}
+\begin{array}{ccc}
+\textrm{Reductions} & \textrm{Probability Correct} \\ \hline
+E
+& \lambda_i + (1 - \lambda_i) \cdot \textrm{logit}^{-1}(\delta_i \cdot (\alpha^k - \beta_i))
+\\
+DE
+& \lambda_i + (1 - \lambda_i) \cdot \textrm{logit}^{-1}(\delta_i \cdot (\alpha - \beta_i))
+\\
+CE
+& \lambda_i + (1 - \lambda_i) \cdot \textrm{logit}^{-1}(\delta_i \cdot \alpha^k)
+\\ \hline
+CDE
+& \lambda_i + (1 - \lambda_i) \cdot \textrm{logit}^{-1}(\delta_i \cdot \alpha)
+\\
+BE
+& \lambda_i + (1 - \lambda_i) \cdot \textrm{logit}^{-1}(\alpha^k - \beta_i)
+\\
+BDE
+& \lambda_i + (1 - \lambda_i) \cdot \textrm{logit}^{-1}(\alpha - \beta_i)
+\\ \hline
+BCE
+& \lambda_i + (1 - \lambda_i) \cdot \textrm{logit}^{-1}(\alpha^k)
+\\
+BCDE
+& \lambda_i + (1 - \lambda_i) \cdot \textrm{logit}^{-1}(\alpha)
+\\
+AE 
+& \textrm{logit}^{-1}(\delta_i \cdot (\alpha^k - \beta_i))
+\\ \hline
+ADE
+& \textrm{logit}^{-1}(\delta_i \cdot (\alpha - \beta_i))
+\\
+ACE
+& \textrm{logit}^{-1}(\delta_i \cdot \alpha^k)
+\\
+ACDE
+& \textrm{logit}^{-1}(\delta_i \cdot \alpha)
+\\ \hline
+ABE
+& \textrm{logit}^{-1}(\alpha^k - \beta_i)
+\end{array}
+\end{equation}
 
 ## About this document
 
