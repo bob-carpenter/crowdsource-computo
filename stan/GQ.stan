@@ -1,5 +1,6 @@
 generated quantities {
   array[J + 1] int<lower = 0> votes_sim;
+  array[J] int votes_by_anno_sim = rep_array(0, J);
   {
     vector[I] delta_pos = exp(delta);
     vector[I] lambda_prob = inv_logit(lambda);
@@ -21,6 +22,9 @@ generated quantities {
 			  * inv_logit(-delta_pos[i] * (alpha_spec[j] - beta[i])));
     }
     votes_sim = vote_count(rating_sim, item, rater, I, J);
-  }
+    for (n in 1:N) {
+      votes_by_anno_sim[rater[n]] += rating_sim[n];
+    }
+  }   
 }
 
