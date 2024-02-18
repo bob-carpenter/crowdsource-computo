@@ -1,6 +1,6 @@
 ---
-title: "A Binary Rating Model for Heterogeneous Items"
-subtitle: "Adjusting for item difficulty, discriminativeness, and guessability"
+title: "Crowdsourcing with Difficulty"
+subtitle: "A Bayesian Rating Model for Heterogeneous Items"
 author:
   - name: Bob Carpenter
     corresponding: true
@@ -15,8 +15,8 @@ date: last-modified
 date-modified: last-modified
 description: |
 abstract: >+
-  Dawid and Skene's crowdsourcing model fails to capture important distributional properties of real rating data.  By adding effects for difficulty, discriminativeness, and guessability, the annotation model is able to more closely model the true data generating process.  This is illustrated with data from dental image classification and natural language inference.
-keywords: [rating, coding, Bayesian, IRT, Stan, Python, Dawid-Skene]
+  Dawid and Skene's crowdsourcing model fails to capture important distributional properties of real rating data.  By adding effects for difficulty, discriminativeness, and guessability, the annotation model is able to more closely model the true data generating process.  This is illustrated with binary data from dental image classification and natural language inference where rater response may be characterized through sensitivity and specificity.
+keywords: [rating model, Dawid-Skene, item-response theory, Bayesian, Stan, Python]
 citation:
   type: article-journal
   container-title: "Computo"
@@ -37,7 +37,7 @@ jupyter: python3
 
 # Introduction
 
-This note considers the rating problem for classification.  An example analyzed later is a data set of roughly dental 4000 X-rays, each of which is rated by 5 dentists as to whether the patient had caries (a kind of pre-cavity).  The dentists showed surprisingly little agreement, with only 100 X-rays having consensus of caries being present.  The dentists also varied dramatically in the number of cases each rated as having caries.  There are several goals for a rating mode, wuch as combining ratings into a consensus analysis, analyzing the accuracy and bias of the individual raters, analyzing the difficulty of the rating task, and analyzing the prevalence of caries among the population represented by the X-rays.  The results may also be used to guide active learning in data acquisition by assessing the information gain from gathering a rating from either a known or a new rater.
+This note considers the rating problem for classification.  An example analyzed later is a data set of roughly 4000 dental X-rays, each of which is rated by 5 dentists as to whether the patient had caries (a kind of pre-cavity).  The dentists showed surprisingly little agreement, with only 100 X-rays having consensus of caries being present.  The dentists also varied dramatically in the number of cases each rated as having caries.  There are several goals for a rating mode, wuch as combining ratings into a consensus analysis, analyzing the accuracy and bias of the individual raters, analyzing the difficulty of the rating task, and analyzing the prevalence of caries among the population represented by the X-rays.  The results may also be used to guide active learning in data acquisition by assessing the information gain from gathering a rating from either a known or a new rater.
 
 One of the main applications is in crowdsourcing, where typically untrained or lightly trained workers perform bulk ratings of highly variable quality.  But these models are equally useful when applied to expert ratings, where expertise is measured in terms of rating accuracy and bias.
 
@@ -54,35 +54,43 @@ Consider a crowdsourcing problem for which there are $I \in \mathbb{N}$ items to
 
 For each item $i$, suppose there are covariates $x_i \in \mathbb{R}^K$.  Then $x \in \mathbb{R}^{I \times K}$ is the full data matrix and $x_i$ is naturally considered a row vector.  In the simplest case, $K = 1$ and $x$ is a single column of 1 values representing an intercept.  In the more general case, other features may denote information relevant for classifying the item, such as the pixels of an image for image classification, demographic information for predicting a vote in an election, or medical test results for predicting a medical condition.
 
-## The complete data likelihood
+## The generative model
 
-The foundation of the model is a diagnostic testing sensitivity and specificity model, which is widely used in epidemiology.  This simple foundation is extended to adjust for difficulty, discrimination, and guessing using the parameterization of the item-response theory three-parameter logistic (IRT 3PL) model, a widely used educational testing model.
+The generative model derives from combining Dawid and Skene's epidemiology model with sensitivity and specificity with the item-response theory educational testing model with item difficulty, disciminativeness, and guessing. The categories for the items are generated independently given the covariates using a logistic regression.  The ratings for an item are then generated conditionally based on the item's category and the rater's abilities and biases.  
 
-### Latent category marginal likelihood
+In frequentist terms, this section presents a complete data likelihood for the categories and rating data.  The categories are not observed and are thus treated as missing data to allow them to be marginalized to derive the likelihood for the rating data.
 
-For each item, let $z_i \in \{ 0, 1 \}$ be its (unobserved/latent) category, with a 1 conventionally denoting "success" or a "positive" result.  The complete data likelihood is complete in the sense that it includes the latent category.  Marginalizing out this category, the technical details and numerical stability of which are deferred until later, leads to the ordinary likelihood function used in the model to avoid challenging inference over discrete parameters.
+### Generating categories
 
-Let $\beta \in \mathbb{R}^K$ be a vector of (unobserved) regression coefficients.  The marginal likelihood for the category is in the form of a logistic regression,
+For each item, let $z_i \in \{ 0, 1 \}$ be its (unobserved/latent) category, with a 1 conventionally denoting "success" or a "positive" result.  The 
+
+The complete data likelihood is complete in the sense that it includes the latent category.  Marginalizing out this category, the technical details and numerical stability of which are deferred until later, leads to the ordinary likelihood function used in the model to avoid challenging inference over discrete parameters.
+
+Let $\beta \in \mathbb{R}^K$ be a vector of (unobserved) regression coefficients.  The probability mass function for the category $z_i$ takes the form of a logistic regression,
 \begin{equation}
 z_i \sim \textrm{bernoulli}\!\left(\textrm{logit}^{-1}(x_i \cdot \beta)\right).
 \end{equation}
-An intercept may be included as a column of 1 values in the data matrix.  Other regression models could be substituted for the logistic regression, such as a neural network model.  All that is needed is a way to go from predictors ($x_i$) and parameters ($\beta) to the log odds of a positive (1) outcome ($x_i \cdot \beta$).
+An intercept may be included as a column of 1 values in the data matrix $x$.  Other regression models could be substituted for the logistic regression, such as using a probit rather than logit link function, or even substituting in a neural network model.  All that is needed is a way to generate a category $z_i$ given the covariates $x_i$.
 
-### Rating conditional likelihood
+### Generating ratings
 
-The rating from rater $j$ for item $i$ is generated conditionally given the category $z_i$ of an item.  For positive items $z_i = 1$), sensitivity (accuracy on positive items) is used, whereas for negative items ($z_i = 0$), specificity (accuracy on negative items) is used.  Thus every rater $j$ will have a sensitivity $\alpha^{\textrm{sens}}_j \in \mathbb{R}$ and a specificity $\alpha^{\textrm{spec}}_j$ on the log odds scale (it will be adjusted for item difficulty and discriminativeness and then logistically transformed to a probability).  If the sensitivity is higher than the specificity there will be a bias toward 1 ratings, whereas if the specificity is higher than the sensitivity, there is a bias toward 0 ratings.  If the model only has sensitivity and specificity parameters for raters, it reduces to Dawid and Skene's diagnostic testing model.  Fixing $\alpha^{\textrm{sens}} = \alpha^{\textrm{spec}}$ introduces an unbiasedness assumption whereby a rater has equal sensitivities and specificities.
+The rating from rater $j$ for item $i$ is generated conditionally given the category $z_i$ of an item.  For positive items $z_i = 1$), sensitivity (i.e., accuracy on positive items) is used, whereas for negative items ($z_i = 0$), specificity (i.e., accuracy on negative items) is used.  Thus every rater $j$ will have a sensitivity $\alpha^{\textrm{sens}}_j \in \mathbb{R}$ and a specificity $\alpha^{\textrm{spec}}_j$ on the log odds scale.  If the sensitivity is higher than the specificity there will be a bias toward 1 ratings, whereas if the specificity is higher than the sensitivity, there is a bias toward 0 ratings.  If the model only has sensitivity and specificity parameters that vary by rater, it reduces to Dawid and Skene's diagnostic testing model.  Fixing $\alpha^{\textrm{sens}} = \alpha^{\textrm{spec}}$ introduces an unbiasedness assumption whereby a rater has equal sensitivities and specificities.
 
 The items are parameterized with a difficulty $\beta_i \in \mathbb{R}$ on the log odds scale.  This difficulty is subtracted form the sensitivity (if $z_i = 1$) or specificity (if $z_i = 0$) as appropriate to give the raw log odds of a correct rating (i.e., a rating matching the true category $z_i$).  Fixing $\beta_i = 0$ introduces the assumption that every item is equally difficult.
 
-Each item is further parameterized with a positive-constrained discrimination parameter $\delta_i \in (0, \infty)$.  This is multiplied by the raw log odds to give a discrimation-adjusted log odds to give a probability of correctly rating the item.  The higher the discrimination, the more likely a rater with ability above the difficulty will get the correct answer and th emore likely a rater with ability below the difficulty will get the incorrect answer.  For educational testing, high discrimation test questions are preferable, but for rating wild type data, low discrimination is also possible when there are low signal data items.  Fixing $\delta_i = 1$ introduces the assumption that the items are equally discriminative.
+Each item is further parameterized with a positive-constrained discrimination parameter $\delta_i \in (0, \infty)$.  This is multiplied by the raw log odds to give a discrimation-adjusted log odds to give a probability of correctly rating the item.  With high discrimination, it is more likely a rater with ability greater than the difficulty will get the correct answer and less likely that a rater with ability less than difficulty will get the correct answer.  For educational testing, high discrimation test questions are preferable, but for rating wild type data, low discrimination items are common because of natural variations in the signal (e.g., natural language text or an image).  Fixing $\delta_i = 1$ introduces the assumption that the items are equally discriminative.
 
-The final parameter associated with an item is a guessability parameter $\lambda_i \in (0, 1)$, giving the probability that a rater can just "guess" the right answer.  Fixing $\lambda_i = 0$ introduces the assumption that the raters never guess an answer.
+The final parameter associated with an item is a guessability parameter $\lambda_i \in (0, 1)$, giving the probability that a rater can just "guess" the right answer.  The probability that a rater assigns the correct rating will thus be the combination of the probability of guessing correctly and otherwise getting the correct answer in the usual way.
 
-The full model follows the IRT-3PL model, where the probability that rater $j$ assigns the correct rating to item $i$ is given by
+Fixing $\lambda_i = 0$ introduces the assumption that the raters never guess an answer.  
+
+The full model follows the item-response theory three-parameter logistic (IRT-3PL) model, where the probability that rater $j$ assigns the correct rating to item $i$ is given by
 \begin{equation}
 y \sim \textrm{binomial}\!\left(\lambda_i + (1 - \lambda_i) \cdot \textrm{logit}^{-1}(\delta_i \cdot (\alpha^k_j - \beta_i))\right),
 \end{equation}
-where $k = \textrm{sens}$ if $z_i = 1$ and $k = \textrm{spec}$ if $z_i = 0.$  To convert to the distribution over rating data, the probability must be flipped when $z_i = 0$ so that a 90\% accurate rating results in a 90% chance of a 0 rating,
+where $k = \textrm{sens}$ if $z_i = 1$ and $k = \textrm{spec}$ if $z_i = 0.$
+
+In order to convert to a distribution over rating, the probability of a 1 outcome must be flipped when $z_i = 0$ so that a 90\% accurate rating results in a 90% chance of a 0 rating,
 \begin{equation}
 y \sim
 \begin{cases}
@@ -96,37 +104,94 @@ y \sim
 The second case ($z_i = 0$) reduces to
 \begin{equation}
 \textrm{binomial}\!\left( \left( 1 - \lambda_i \right)
-                \cdot \left( 1 - \textrm{logit}^{-1}\!\left(\delta_i \cdot \left(\alpha^\textrm{sens}_j - \beta_i\right)\right)\right)\right),
+                \cdot \left( 1 - \textrm{logit}^{-1}\!\left(\delta_i \cdot \left(\alpha^\textrm{sens}_j - \beta_i\right)\right)\right)\right).
 \end{equation}
-and reduces further to
+
+## Marginal likelihood
+
+The generative model leaves us with latent discrete categories $z_i \in \{ 0, 1 \}$ for each item.  For both optimization and sampling, it is convenient to marginalize the complete likelihood $p(y, z \mid \pi, \alpha, \beta, \delta, \lambda)$ to the rating likelihood $p(y \mid \pi, \alpha, \beta, \delta, \lambda)$.  This notation suppresses the conditioning throughout on the design variables $\textrm{rater}$ and $\textrm{item}$.  The marginalization calculation is efficient because it is factored by data item.  Letting $\theta = \pi, \alpha, \beta, \delta, \lambda$ be the full set of continuous parameters, the trick is to rearrange the long-form data by item, by selecting the $n$ by item (i.e., by $\textrm{item}_n$).
 \begin{equation}
-\textrm{binomial}\!\left( \left( 1 - \lambda_i \right)
-                \cdot \textrm{logit}^{-1}\!\left(-\delta_i \cdot \left(\alpha^\textrm{sens}_j - \beta_i\right)\right)\right).
+\begin{array}{rcl}
+p(y, z \mid \theta)
+& = &
+\prod_{i=1}^I p(z_i \mid \theta)
+\cdot
+\prod_{n = 1}^N p(y_n \mid z, \theta)
+\\[4pt]
+& = & 
+\prod_{i=i}^I
+  \left( p(z_i \mid \theta)
+         \cdot
+	 \prod_{n : \textrm{item}_n = i} p(y_n \mid z_i, \theta)
+  \right).
+\end{array}
 \end{equation}
-The table below summarizes the reduced models, where the reductions are
+
+On a per item basis, the marginalization is tractable,
+\begin{equation}
+p(y \mid \theta)
+= \prod_{i=i}^I
+  \sum_{z_i = 0}^1 \,
+          p(z_i \mid \theta)
+                \cdot
+		\prod_{n : \textrm{item}_n = i} p(y_n \mid z_i, \theta).
+\end{equation}
+
+Computational inference requires a log likelihood.  The log marginal likelihood of the rating data is
+\begin{equation}
+\begin{array}{rcl}
+\log p(y \mid \theta)
+& = & \log \prod_{i=i}^I
+  \sum_{z_i = 0}^1 \,
+          p(z_i \mid \theta)
+                \cdot
+		\prod_{n : \textrm{item}_n = i} p(y_n \mid z_i, \theta).
+\\[4pt]
+& = &
+\sum_{i=1}^I
+\textrm{logSumExp}_{z_i = 0}^1 \,
+  \left(
+    \log p(z_i \mid \theta)
+    + 
+    \sum_{n : \textrm{item}_n = i} \log p(y_n \mid z_i, \theta)
+  \right),
+\end{array}
+\end{equation}
+where
+\begin{equation}
+\textrm{logSumExp}_{n = 1}^N \, \ell_n
+= \log \sum_{n=1}^N \exp(\ell_n)
+\end{equation}
+is the numerically stable log-scale analogue of addition.
+
+## Model reductions
+
+By tying or fixing parameters, the full model may be reduced to define a wide range of natural submodels.  Six of these models correspond to item-response theory models of the one-, two-, and three-parameter logistic variety, either with or without a sensitivity/specificity distinction. The model with varying rater sensitivity and specificity and no item effects reduces to Dawid and Skene's model.  Other models, such as the model with a single item effect and no rater effects have been studied in the epidemiology literature.
+
+The table below summarizes the possible model reductions and gives them tags by which they can be abbreviated when evaluating models.
 
 | Reduction | Description | Tag |
 |:---------:|:-----------:|:---:|
-| $\lambda_i = 0$ |  no guessing | A |
-| $\delta_i = 1$ | equal discrimination | B |
-| $\beta_i = 0$ |equal difficulty | C |
-| $\alpha^{\textrm{spec}} = \alpha^{\textrm{sens}}$ | unbiased | D |
+| $\lambda_i = 0$ |  no guessing items | A |
+| $\delta_i = 1$ | equal discrimination items | B |
+| $\beta_i = 0$ |equal difficulty items | C |
+| $\alpha^{\textrm{spec}} = \alpha^{\textrm{sens}}$ | unbiased raters | D |
 | $\alpha_j = \alpha_j'$ | identical raters | E |
 
 
-The first list contains models that model bias by splitting accuracy into sensitivity and specificity components.  Models without a sensitivity versus specificity distinction make sense when the categories are not ordered.  For example, asking consumers which brand is their favorite between two brands at a time, the labels 0 and 1 are arbitrary, and sensitivity should be equal to specificity.  The following models do not distinguish sensitivty and specificity.
+The first list contains models that model bias by splitting accuracy into sensitivity and specificity components.  Models without a sensitivity versus specificity distinction make sense when the categories are not ordered.  For example, asking consumers which brand is their favorite between two brands at a time, the labels 0 and 1 are arbitrary, and sensitivity should be equal to specificity.  The following models do not distinguish sensitivity and specificity.
 
 \begin{equation}
-\begin{array}{cc}
-\textrm{Reductions} & \textrm{Probability Correct} \\ \hline
+\begin{array}{ccl}
+\textrm{Reductions} & \textrm{Probability Correct} & \textrm{Note} \\ \hline
 D
-& \lambda_i + (1 - \lambda_i) \cdot \textrm{logit}^{-1}(\delta_i \cdot (\alpha_j - \beta_i))
+& \lambda_i + (1 - \lambda_i) \cdot \textrm{logit}^{-1}(\delta_i \cdot (\alpha_j - \beta_i)) & \textrm{\small IRT 3PL}
 \\ 
 CD
 & \lambda_i + (1 - \lambda_i) \cdot \textrm{logit}^{-1}(\delta_i \cdot \alpha_j)
 \\
 BD
-& \lambda_i + (1 - \lambda_i) \cdot \textrm{logit}^{-1}(\alpha_j - \beta_i)
+& \lambda_i + (1 - \lambda_i) \cdot \textrm{logit}^{-1}(\alpha_j - \beta_i) & \textrm{\small IRT 2PL}
 \\ \hline
 BCD
 & \lambda_i + (1 - \lambda_i) \cdot \textrm{logit}^{-1}(\alpha_j)
@@ -138,7 +203,7 @@ ACD
 & \textrm{logit}^{-1}(\delta_i \cdot \alpha_j)
 \\ \hline
 ABD
-& \textrm{logit}^{-1}(\alpha_j - \beta_i)
+& \textrm{logit}^{-1}(\alpha_j - \beta_i) & \textrm{\small IRT 1PL}
 \\
 ABCD
 & \textrm{logit}^{-1}(\alpha_j)
@@ -147,13 +212,11 @@ ABCDE
 & \textrm{logit}^{-1}(\alpha)
 \end{array}
 \end{equation}
-The final model in the list is the only model that does not distinguish among the raters, using a single accuracy parameter.
-
-The following models introduce separate parameters for sensitivity and specifity rather than assuming they are the same.
+The final model in the list is the only model that does not distinguish among the raters, using a single accuracy parameter. The following models introduce separate parameters for sensitivity and specifity rather than assuming they are the same.
 \begin{equation}
-\begin{array}{cc}
-\textrm{Reductions} & \textrm{Probability Correct} \\ \hline
-& \lambda_i + (1 - \lambda_i) \cdot \textrm{logit}^{-1}(\delta_i \cdot (\alpha^k_j - \beta_i))
+\begin{array}{ccl}
+\textrm{Reductions} & \textrm{Probability Correct} & \textrm{Note} \\ \hline
+& \lambda_i + (1 - \lambda_i) \cdot \textrm{logit}^{-1}(\delta_i \cdot (\alpha^k_j - \beta_i)) & \textrm{\small IRT 3PL + sens/spec}
 \\
 C
 & \lambda_i + (1 - \lambda_i) \cdot \textrm{logit}^{-1}(\delta_i \cdot \alpha^k_j)
@@ -162,16 +225,16 @@ BC
 & \lambda_i + (1 - \lambda_i) \cdot \textrm{logit}^{-1}(\alpha^k_j)
 \\ \hline
 A
-& \textrm{logit}^{-1}(\delta_i \cdot (\alpha^k_j - \beta_i))
+& \textrm{logit}^{-1}(\delta_i \cdot (\alpha^k_j - \beta_i)) & \textrm{\small IRT 2PL + sens/spec}
 \\
 AC
 & \textrm{logit}^{-1}(\delta_i \cdot \alpha^k_j)
 \\
 AB
-& \textrm{logit}^{-1}(\alpha^k_j - \beta_i)
+& \textrm{logit}^{-1}(\alpha^k_j - \beta_i) & \textrm{\small IRT 1PL + sens/spec}
 \\ \hline
 ABC
-& \textrm{logit}^{-1}(\alpha^k_j)
+& \textrm{logit}^{-1}(\alpha^k_j) & \textrm{\small Dawid and Skene}
 \\
 ABCE
 & \textrm{logit}^{-1}(\alpha^k)

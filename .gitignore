@@ -6,6 +6,12 @@ __pycache__/
 # C extensions
 *.so
 
+# cpp
+*.hpp
+*.html
+*.pdf
+crowdsource-with-difficulty_files/*
+
 # Distribution / packaging
 .Python
 build/

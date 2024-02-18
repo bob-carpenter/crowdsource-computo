@@ -6,16 +6,16 @@ transformed data {
 }
 parameters {
   real<lower=0, upper=1> pi;
-  vector<lower=0>[J] alpha_acc;
+  vector[J] alpha_spec;
+  vector<lower=-alpha_spec>[J] alpha_sens;
 }
 transformed parameters {
-  vector[J] alpha_sens = alpha_acc;
-  vector[J] alpha_spec = alpha_acc;
 #include LOG-LIKELIHOOD.stan
 }
 model {
   pi ~ uniform(0, 1);
-  alpha_acc ~ logistic(0, 1);
+  alpha_spec ~ logistic(0, 1);
+  alpha_sens ~ logistic(0, 1);
   target += log_lik;
 }
 #include GQ.stan
