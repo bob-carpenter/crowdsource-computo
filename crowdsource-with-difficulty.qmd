@@ -66,11 +66,12 @@ For each item, let $z_i \in \{ 0, 1 \}$ be its (unobserved/latent) category, wit
 
 The complete data likelihood is complete in the sense that it includes the latent category.  Marginalizing out this category, the technical details and numerical stability of which are deferred until later, leads to the ordinary likelihood function used in the model to avoid challenging inference over discrete parameters.
 
-Let $\beta \in \mathbb{R}^K$ be a vector of (unobserved) regression coefficients.  The probability mass function for the category $z_i$ takes the form of a logistic regression,
+Let $\beta \in \mathbb{R}^K$ be a vector of (unobserved) regression coefficients.  Let $\pi \in (0, 1)$ be the parameter representing the prevalence of positive outcomes.  
+
+Categories are generated independently given the prevalence,
 \begin{equation}
-z_i \sim \textrm{bernoulli}\!\left(\textrm{logit}^{-1}(x_i \cdot \beta)\right).
+z_i \sim \textrm{bernoulli}(\pi).
 \end{equation}
-An intercept may be included as a column of 1 values in the data matrix $x$.  Other regression models could be substituted for the logistic regression, such as using a probit rather than logit link function, or even substituting in a neural network model.  All that is needed is a way to generate a category $z_i$ given the covariates $x_i$.
 
 ### Generating ratings
 
@@ -80,9 +81,9 @@ The items are parameterized with a difficulty $\beta_i \in \mathbb{R}$ on the lo
 
 Each item is further parameterized with a positive-constrained discrimination parameter $\delta_i \in (0, \infty)$.  This is multiplied by the raw log odds to give a discrimation-adjusted log odds to give a probability of correctly rating the item.  With high discrimination, it is more likely a rater with ability greater than the difficulty will get the correct answer and less likely that a rater with ability less than difficulty will get the correct answer.  For educational testing, high discrimation test questions are preferable, but for rating wild type data, low discrimination items are common because of natural variations in the signal (e.g., natural language text or an image).  Fixing $\delta_i = 1$ introduces the assumption that the items are equally discriminative.
 
-The final parameter associated with an item is a guessability parameter $\lambda_i \in (0, 1)$, giving the probability that a rater can just "guess" the right answer.  The probability that a rater assigns the correct rating will thus be the combination of the probability of guessing correctly and otherwise getting the correct answer in the usual way.
+The final parameter associated with an item is a guessability parameter $\lambda_i \in (0, 1)$, giving the probability that a rater can just "guess" the right answer.  The probability that a rater assigns the correct rating will thus be the combination of the probability of guessing correctly and otherwise getting the correct answer in the usual way.  Fixing $\lambda_i = 0$ introduces the assumption that the raters never guess an answer.  
 
-Fixing $\lambda_i = 0$ introduces the assumption that the raters never guess an answer.  
+Without a guessing parameter, as difficulty goes to infinity, the probability a rater provides the correct label for an item goes to zero.  With guessing, the probability of a correct label is always at least the probability of guessing.
 
 The full model follows the item-response theory three-parameter logistic (IRT-3PL) model, where the probability that rater $j$ assigns the correct rating to item $i$ is given by
 \begin{equation}
@@ -106,6 +107,21 @@ The second case ($z_i = 0$) reduces to
 \textrm{binomial}\!\left( \left( 1 - \lambda_i \right)
                 \cdot \left( 1 - \textrm{logit}^{-1}\!\left(\delta_i \cdot \left(\alpha^\textrm{sens}_j - \beta_i\right)\right)\right)\right).
 \end{equation}
+
+### Adding predictors
+
+If covariates are available that inform the parameters, they may be incorporated in a very general way through a generalized linear model.
+
+Suppose there are item-level covariates $x_i \in \mathbb{R}^K$.  With a parameter vector $\gamma \in \mathbb{R}^K$, the generative model for the category of an item may be extended to a logistic regression,
+\begin{equation}
+z_i \sim \textrm{bernoulli}\!\left( x_i \cdot \beta \right).
+\end{equation}
+Here, $x_i \in \mathbb{R}^K$ is considered a row vector because it is a row of the data matrix $x \in \mathbb{I \times K}$.  An intercept for the regression may be added by including a column of 1 values in $x$.  The resulting coefficients will act as a classifier for new items by generating a covariate-specific prevalence.  This motivated @raykar2010's combination of Dawid and Skene's rating model and a logistic regression of this form. 
+
+Item-level coariates can be used to generate the item-level parameters of difficulty, discrimination, and guessability.  For example, a covariate that indicates the number of options in a multiple choice test would inform the guessability parameter.  If the grade level of the textbook from which a problem was culled was included as a predictor, that could be used to inform the difficulty parameter.
+
+If there are rater level covariates $u_i \in \mathbb{R}^L$, these may be used in the same way to generate the ability parameters for the raters.  For example, there might be an indicator of whether the rater was an undergraduate, graduate student, faculty member, or crowdsourced external agent, which could be used to inform ability.
+
 
 ## Marginal likelihood
 
