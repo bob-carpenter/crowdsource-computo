@@ -1,6 +1,9 @@
 generated quantities {
   array[J + 1] int<lower = 0> votes_sim;
-  array[J] int votes_by_anno_sim = rep_array(0, J);
+  array[J + 1] int<lower=0, upper=1> votes_sim_lt_data;
+
+  array[J] int<lower=0> rater_sim = rep_array(0, J);
+  array[J] int<lower=0, upper=1> rater_sim_lt_data;
   {
     array[N] int rating_sim;
     array[I] int z_sim;
@@ -19,9 +22,15 @@ generated quantities {
                           * inv_logit(-delta[i] * (alpha_spec[j] -  beta[i])));
                         
     }
+
     votes_sim = vote_count(rating_sim, item, rater, I, J);
-    for (n in 1:N) {
-      votes_by_anno_sim[rater[n]] += rating_sim[n];
+    for (j in 1:J + 1) {
+      votes_sim_lt_data[j] = votes_sim[j] < votes_data[j];
+    }
+
+    rater_sim = rater_count(rating_sim, rater, J);
+    for (j in 1:J) {
+      rater_sim_lt_data[j] = rater_sim[j] < rater_data[j];
     }
   }   
 }

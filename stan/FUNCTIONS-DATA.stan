@@ -14,6 +14,17 @@ functions {
     }
     return count;
   }
+
+  array[] int rater_count(array[] int rating,
+                          array[] int rater,
+                          int J) {
+    array[J] int count = rep_array(0, J);
+    int N = size(rating);
+    for (n in 1:N) {
+      count[rater[n]] += rating[n];
+    }
+    return count;
+  }    
 }
 data {
   int<lower=0> I;

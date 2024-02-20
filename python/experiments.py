@@ -2,7 +2,15 @@ import cmdstanpy as csp
 import numpy as np
 import scipy as sp
 import pandas as pd
+import logging
+import warnings
+
+# warnings.simplefilter(action='ignore', category=FutureWarning)
+# warnings.filterwarnings( "ignore", module = "plotnine\..*" )
+csp.utils.get_logger().setLevel(logging.INFO)
 pd.set_option('display.max_rows', None)
+pd.set_option('display.max_columns', None)
+
 
 def rating_csv_to_dict(file):
     df = pd.read_csv(file, comment = '#')
@@ -18,10 +26,11 @@ def rating_csv_to_dict(file):
 
 def sample(stan_file, data, init = {}):
     model = csp.CmdStanModel(stan_file = stan_file)
-    sample = model.sample(data = data, show_console = True, refresh = 5,
-                          iter_warmup=200, iter_sampling=200,
-                          parallel_chains = 4,
-                          chains = 2, inits = init,
+    sample = model.sample(data = data, inits = init,
+                          iter_warmup=100, iter_sampling=100,
+                          chains = 2, parallel_chains = 4,
+                          show_console = True, show_progress=False,
+                          refresh = 10,
                           seed = 925845)
     return sample
 
@@ -36,34 +45,44 @@ init = {
     'alpha_spec': np.full(data['J'], 2),
     'beta': np.full(data['I'], 0),
     'delta': np.full(data['I'], 1),
-    'lambda': np.full(data['I'], 0.5),
+    'lambda': np.full(data['I'], 0.5)
 }         
 
-# sens == spec models
-draws_d = sample('../stan/d.stan', data, init)  # OK
-draws_cd = sample('../stan/cd.stan', data, init)
-draws_bd = sample('../stan/bd.stan', data, init)
-draws_bcd = sample('../stan/bcd.stan', data, init)
-draws_ad = sample('../stan/ad.stan', data, init)
-draws_acd = sample('../stan/acd.stan', data, init)
-draws_abd = sample('../stan/abd.stan', data, init)
-draws_abcd = sample('../stan/abcd.stan', data, init)
-draws_abcde = sample('../stan/abcde.stan', data, init)
+models = ['d', 'cd', 'bd', 'bcd', 'ad', 'acd', 'abd', 'abcd', 'abcde',  # acc
+              'full', 'c', 'bc', 'a', 'ac', 'ab', 'abc', 'abce',   # sens
+              'abde' ]  # no rater effects
 
-# sens != spec models
-draws_full = sample('../stan/full.stan', data, init)
-draws_c = sample('../stan/c.stan', data, init)
-draws_bc = sample('../stan/bc.stan', data, init)
-draws_a = sample('../stan/a.stan', data, init)
-draws_ac = sample('../stan/ac.stan', data, init)
-draws_ab = sample('../stan/ab.stan', data, init)
-draws_abc = sample('../stan/abc.stan', data, init)
-draws_abce = sample('../stan/abce.stan', data, init)
+rater_labels = [f"rater_sim[{i}]" for i in range(1, 6)]
+rater_lt_labels = [f"rater_sim_lt_data[{i}]" for i in range(1, 6)]
+votes_labels = [f"votes_sim[{i}]" for i in range(1, 7)]
+votes_lt_labels = [f"votes_sim_lt_data[{i}]" for i in range(1, 7)]
 
-# no accuracy (rater effect only)
-draws_abde = sample('../stan/abde.stan', data, init)
+models = ['abc', 'abcd']
+rows = []
+for model in models:
+    print(f"{model = }")
+    draws = sample('../stan/' + model + '.stan', data, init)
+    post_summary = draws.summary()
+    post_rhat = post_summary['R_hat']
+    post_means = post_summary['Mean']
+    rhat_lp = post_rhat['lp__']
+    rhat_max = np.max(post_rhat)
+    pi = post_means['pi']
+    log_lik = post_means['log_lik']
+    rater_sim = post_means[rater_labels]
+    rater_lt_sim = post_means[rater_lt_labels]
+    votes_sim = post_means[votes_labels]
+    votes_lt_sim = post_means[votes_lt_labels]
+    row = {'model': [model], 'rhat_max': [rhat_max], 'rhat_lp': [rhat_lp], 'pi': [pi], 'log_lik': log_lik }
+    row.update(dict(zip(rater_labels, rater_sim)))
+    row.update(dict(zip(rater_lt_labels, rater_lt_sim)))
+    row.update(dict(zip(votes_labels, votes_sim)))
+    row.update(dict(zip(votes_lt_labels, votes_lt_sim)))
+    rows.append(pd.DataFrame(row))
 
-# draws_abcde.summary()
+results_df = pd.concat(rows)
+    
+
 
 
 
