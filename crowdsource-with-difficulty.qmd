@@ -15,7 +15,7 @@ date: last-modified
 date-modified: last-modified
 description: |
 abstract: >+
-  Dawid and Skene's crowdsourcing model fails to capture important distributional properties of real rating data.  By adding effects for difficulty, discriminativeness, and guessability, the annotation model is able to more closely model the true data generating process.  This is illustrated with binary data from dental image classification and natural language inference where rater response may be characterized through sensitivity and specificity.
+  Dawid and Skene's crowdsourcing model, which adjusts raters for sensitivity and specificity, fails to capture important distributional properties of real rating data.  By adding item-level effects for difficulty, discriminativeness, and guessability, the annotation model is able to more closely model the true data generating process.  This is illustrated with binary data from dental image classification and natural language inference.
 keywords: [rating model, Dawid-Skene, item-response theory, Bayesian, Stan, Python]
 citation:
   type: article-journal
@@ -37,7 +37,23 @@ jupyter: python3
 
 # Introduction
 
-This note considers the rating problem for classification.  An example analyzed later is a data set of roughly 4000 dental X-rays, each of which is rated by 5 dentists as to whether the patient had caries (a kind of pre-cavity).  The dentists showed surprisingly little agreement, with only 100 X-rays having consensus of caries being present.  The dentists also varied dramatically in the number of cases each rated as having caries.  There are several goals for a rating mode, wuch as combining ratings into a consensus analysis, analyzing the accuracy and bias of the individual raters, analyzing the difficulty of the rating task, and analyzing the prevalence of caries among the population represented by the X-rays.  The results may also be used to guide active learning in data acquisition by assessing the information gain from gathering a rating from either a known or a new rater.
+This note considers the rating problem for classification.  Although the title says "crowdsourcing," this model is relevant whenever any group of people's opinions need to be combined, be they experts or novices.
+
+An example application analyzed later involves classifying dental X-rays for caries (a kind of pre-cavity).  There are thousands of X-rays, each of which is rated positive or negative for caries by a handful of dentists.  The dentists showed surprisingly little agreement, and very little consensus (complete agreement among dentists for an item), especially in the positive cases.  The dentists also varied dramatically in the number of cases each rated as having caries.  Another example analyzed later is a data set of pairs of sentences, with the goal being to classify pairs where the first sentence implies the second sentence.  This data set has thousands of items and dozens of raters, each of which rates a small subset of the items.  As with the dentistry data, there is surprisingly low agreement for what sounds like a simple task.  A third example is image classification, where digital images are classified by subject matter---one of the earliest applications of crowdsourcing for classification in machine learning was for classifying images of Venus as to whether there was a volcano present.
+
+There are several tasks for which crowdsourcing is used, and a rating model improves performance on all of them over heuristic baselines.  The most common task is to generate a "gold standard" data set, where a single category (or label) is assigned to each item.  In terms of generating representative data, it is best to sample data according to its probability (i.e., follow the generative model) rather than to choose the "best" (i.e., highest probability) rating for each item.  
+
+If the goal of creating a gold standard data set is to train a machine learning classifier, the second section of this paper shows why it is better for downstream accuracy to train with a probabilistic corpus that retains information about rating uncertainty.  Barring that, it is far better to sample labels according to their posterior probability in the rating model than to choose the "best" label.  In particular, majority voting schemes among raters will be later shown to e sub-optimal compared to sampling, which is in turn dominated by training with the probabilities (a kind of Rao-Blackwellization).  An even better approach is to jointly train a classifier and analyze rating data.
+
+A second task for crowdsourcing is to understand a coding standard, which is the instruction set guiding the rating.  Someone generates instructions for how data is to be rated, and its understandability can be understood directly by looking at posterior uncertainty of items, and indirectly by evaluating raters.
+
+A third task for crowdsourcing or rating is to understand the population of raters.  This might be something like the population prevalence of hate speech on a web site.  For that, a rating model will infer a prevalence, perhaps conditioned on item-level covariates.
+
+A fourth task for crowdsourcing is to understand the population of items.  What makes an item hard to annotate?  What makes an item discriminative?  What is the prevalence of positive items?  Population prevalence is the primary focus of disease diagnostic models in epidemiology---the diagnosis of individuals is often taken as secondary.
+
+A fourth task is to understand the population(s) of raters.  This is important when managing raters for multiple crowdsourcing tasks.  For example, it will be possible to infer the rate of spammers and the rate of high quality raters.  The number of raters required for high quality joint ratings may also be assessed.  Raters with high bias or low accuracy may be coached to become better.
+
+A fifth task, though arguably part of the rating task itself, is active learning.  How may items and raters be selected to gather the most information for a task for the least cost?  This problem is related to traditional survey sampling.
 
 One of the main applications is in crowdsourcing, where typically untrained or lightly trained workers perform bulk ratings of highly variable quality.  But these models are equally useful when applied to expert ratings, where expertise is measured in terms of rating accuracy and bias.
 

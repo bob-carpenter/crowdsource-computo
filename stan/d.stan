@@ -1,5 +1,6 @@
 #include FUNCTIONS-DATA.stan
 transformed data {
+#include DATA-COUNTS.stan
 }
 parameters {
   real<lower=0, upper=1> pi;

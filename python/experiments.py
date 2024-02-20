@@ -27,8 +27,8 @@ def rating_csv_to_dict(file):
 def sample(stan_file, data, init = {}):
     model = csp.CmdStanModel(stan_file = stan_file)
     sample = model.sample(data = data, inits = init,
-                          iter_warmup=100, iter_sampling=100,
-                          chains = 2, parallel_chains = 4,
+                          iter_warmup=20, iter_sampling=20,
+                          chains = 1, parallel_chains = 4,
                           show_console = True, show_progress=False,
                           refresh = 10,
                           seed = 925845)
@@ -48,8 +48,7 @@ init = {
     'lambda': np.full(data['I'], 0.5)
 }         
 
-models = ['d', 'cd', 'bd', 'bcd', 'ad', 'acd', 'abd', 'abcd', 'abcde',  # acc
-              'full', 'c', 'bc', 'a', 'ac', 'ab', 'abc', 'abce',   # sens
+'abce',   # sens
               'abde' ]  # no rater effects
 
 rater_labels = [f"rater_sim[{i}]" for i in range(1, 6)]
@@ -57,10 +56,11 @@ rater_lt_labels = [f"rater_sim_lt_data[{i}]" for i in range(1, 6)]
 votes_labels = [f"votes_sim[{i}]" for i in range(1, 7)]
 votes_lt_labels = [f"votes_sim_lt_data[{i}]" for i in range(1, 7)]
 
-models = ['abc', 'abcd']
+models = ['a', 'ab', 'abc', 'abcd', 'abcde', 'abce', 'abd', 'abde', 'ac', 'acd', 'ad', 'bc', 'bcd', 'bd', 'c', 'cd', 'd', 'full']
+
 rows = []
 for model in models:
-    print(f"{model = }")
+    print(f"\n\n***** {model = }")
     draws = sample('../stan/' + model + '.stan', data, init)
     post_summary = draws.summary()
     post_rhat = post_summary['R_hat']

@@ -1,6 +1,7 @@
 #include FUNCTIONS-DATA.stan
 transformed data {
   vector[I] beta = rep_vector(0, I);
+#include DATA-COUNTS.stan
 }
 parameters {
   real<lower=0, upper=1> pi;

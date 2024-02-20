@@ -2,6 +2,7 @@
 transformed data {
   vector<lower=0>[I] delta = rep_vector(1, I);
   vector[I] beta = rep_vector(0, I);
+#include DATA-COUNTS.stan
 }
 parameters {
   real<lower=0, upper=1> pi;
