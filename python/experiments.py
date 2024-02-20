@@ -7,7 +7,7 @@ import warnings
 
 # warnings.simplefilter(action='ignore', category=FutureWarning)
 # warnings.filterwarnings( "ignore", module = "plotnine\..*" )
-csp.utils.get_logger().setLevel(logging.INFO)
+csp.utils.get_logger().setLevel(logging.ERROR)
 pd.set_option('display.max_rows', None)
 pd.set_option('display.max_columns', None)
 
@@ -27,10 +27,10 @@ def rating_csv_to_dict(file):
 def sample(stan_file, data, init = {}):
     model = csp.CmdStanModel(stan_file = stan_file)
     sample = model.sample(data = data, inits = init,
-                          iter_warmup=20, iter_sampling=20,
-                          chains = 1, parallel_chains = 4,
-                          show_console = True, show_progress=False,
-                          refresh = 10,
+                          iter_warmup=500, iter_sampling=500,
+                          chains = 4, parallel_chains = 4,
+                          show_console = False, show_progress=False,
+                          refresh = 1_000_000,
                           seed = 925845)
     return sample
 
@@ -48,9 +48,6 @@ init = {
     'lambda': np.full(data['I'], 0.5)
 }         
 
-'abce',   # sens
-              'abde' ]  # no rater effects
-
 rater_labels = [f"rater_sim[{i}]" for i in range(1, 6)]
 rater_lt_labels = [f"rater_sim_lt_data[{i}]" for i in range(1, 6)]
 votes_labels = [f"votes_sim[{i}]" for i in range(1, 7)]
@@ -60,7 +57,7 @@ models = ['a', 'ab', 'abc', 'abcd', 'abcde', 'abce', 'abd', 'abde', 'ac', 'acd',
 
 rows = []
 for model in models:
-    print(f"\n\n***** {model = }")
+    print(f"***** {model = }")
     draws = sample('../stan/' + model + '.stan', data, init)
     post_summary = draws.summary()
     post_rhat = post_summary['R_hat']
@@ -81,6 +78,7 @@ for model in models:
     rows.append(pd.DataFrame(row))
 
 results_df = pd.concat(rows)
+results_df.to_csv('results.csv', index=False, sep=',', encoding='utf-8')
     
 
 
