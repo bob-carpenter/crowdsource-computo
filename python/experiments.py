@@ -27,10 +27,10 @@ def rating_csv_to_dict(file):
 def sample(stan_file, data, init = {}):
     model = csp.CmdStanModel(stan_file = stan_file)
     sample = model.sample(data = data, inits = init,
-                          iter_warmup=500, iter_sampling=500,
+                          iter_warmup=1000, iter_sampling=1000,
                           chains = 4, parallel_chains = 4,
-                          show_console = False, show_progress=False,
-                          refresh = 1_000_000,
+                          show_console = True, show_progress=False,
+                          refresh = 10,
                           seed = 925845)
     return sample
 
@@ -54,6 +54,10 @@ votes_labels = [f"votes_sim[{i}]" for i in range(1, 7)]
 votes_lt_labels = [f"votes_sim_lt_data[{i}]" for i in range(1, 7)]
 
 models = ['a', 'ab', 'abc', 'abcd', 'abcde', 'abce', 'abd', 'abde', 'ac', 'acd', 'ad', 'bc', 'bcd', 'bd', 'c', 'cd', 'd', 'full']
+
+models = ['a', 'ab', 'abd', 'abde', 'd', 'full']
+
+models = ['abde']
 
 rows = []
 for model in models:

@@ -8,14 +8,14 @@ transformed data {
 }
 parameters {
   real<lower=0, upper=1> pi;
-  vector[I] beta;
+  vector<upper=0.0001>[I] beta;
 }
 transformed parameters {
 #include LOG-LIKELIHOOD.stan
 }
 model {
   pi ~ uniform(0, 1);
-  beta ~ normal(0, 1);
+  beta ~ normal(0, 2);
   target += log_lik;
 }
 #include GQ.stan
