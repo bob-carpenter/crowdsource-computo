@@ -15,9 +15,9 @@ transformed parameters {
 }
 model {
   pi ~ uniform(0, 1);
-  alpha_spec ~ logistic(0, 1);
-  alpha_sens ~ logistic(0, 1);
-  beta ~ logistic(0, 1);
+  alpha_spec ~ logistic(2, 1);
+  alpha_sens ~ logistic(1, 1);
+  beta ~ normal(0, 1);
   delta ~ lognormal(0, 0.25);
   target += log_lik;
 }

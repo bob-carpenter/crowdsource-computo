@@ -7,7 +7,7 @@ parameters {
   vector<lower=0>[J] alpha_acc;
   vector[I] beta;
   vector<lower=0>[I] delta;
-  vector<lower=0, upper=1>[I] lambda;
+  vector<lower=0, upper=1>[I] lambda; // = rep_vector(lambda_scalar, I);
 }
 transformed parameters {
   vector[J] alpha_sens = alpha_acc;
@@ -19,7 +19,7 @@ model {
   alpha_acc ~ normal(0, 3);
   beta ~ normal(0, 1);
   delta ~ lognormal(0, 0.5);
-  lambda ~ uniform(0, 1);
+  lambda ~ beta(5, 5);
   target += log_lik;
 }
 #include GQ.stan

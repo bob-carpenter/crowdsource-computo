@@ -19,7 +19,7 @@ model {
   alpha_sens ~ normal(0, 3);
   beta ~ normal(0, 1);
   delta ~ lognormal(0, 0.5);
-  lambda ~ uniform(0, 1);
+  lambda ~ beta(5, 5);
   target += log_lik;
 }
 #include GQ.stan

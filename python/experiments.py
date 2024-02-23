@@ -7,7 +7,7 @@ import warnings
 
 # warnings.simplefilter(action='ignore', category=FutureWarning)
 # warnings.filterwarnings( "ignore", module = "plotnine\..*" )
-csp.utils.get_logger().setLevel(logging.ERROR)
+csp.utils.get_logger().setLevel(logging.INFO)
 pd.set_option('display.max_rows', None)
 pd.set_option('display.max_columns', None)
 
@@ -27,19 +27,24 @@ def rating_csv_to_dict(file):
 def sample(stan_file, data, init = {}):
     model = csp.CmdStanModel(stan_file = stan_file)
     sample = model.sample(data = data, inits = init,
-                          iter_warmup=1000, iter_sampling=1000,
-                          chains = 4, parallel_chains = 4,
+                          iter_warmup=200, iter_sampling=200,
+                          chains = 2, parallel_chains = 4,
                           show_console = True, show_progress=False,
                           refresh = 10,
                           seed = 925845)
     return sample
+
+def pathfind(stan_file, data, init = {}):
+    model = csp.CmdStanModel(stan_file = stan_file)
+    fit = model.pathfinder(data = data, inits = init, show_console=True, refresh = 5)
+    return fit
 
 data = rating_csv_to_dict('../data/caries.csv')
 init = {
     'pi': 0.2,
     'alpha_acc_scalar': 2,
     'alpha_sens_scalar': 1,
-    'alpha_spec_scalar': 1,
+    'alpha_spec_scalar': 2,
     'alpha_acc': np.full(data['J'], 2),
     'alpha_sens': np.full(data['J'], 1),
     'alpha_spec': np.full(data['J'], 2),
@@ -58,10 +63,12 @@ models = ['a', 'ab', 'abc', 'abcd', 'abcde', 'abce', 'abd', 'abde', 'ac', 'acd',
 models = ['a', 'ab', 'abd', 'abde', 'd', 'full']
 
 models = ['abde']
-
+model = 'abde'
 rows = []
 for model in models:
     print(f"***** {model = }")
+    # pf_fit = pathfind('../stan/' + model + '.stan', data, init)
+    # init_dict = fit.create_inits(seed, chains=1)
     draws = sample('../stan/' + model + '.stan', data, init)
     post_summary = draws.summary()
     post_rhat = post_summary['R_hat']
@@ -79,6 +86,7 @@ for model in models:
     row.update(dict(zip(rater_lt_labels, rater_lt_sim)))
     row.update(dict(zip(votes_labels, votes_sim)))
     row.update(dict(zip(votes_lt_labels, votes_lt_sim)))
+    print(row)
     rows.append(pd.DataFrame(row))
 
 results_df = pd.concat(rows)
