@@ -37,26 +37,54 @@ jupyter: python3
 
 # Introduction
 
-This note considers the rating problem for classification.  Although the title says "crowdsourcing," this model is relevant whenever any group of people's opinions need to be combined, be they experts or novices.
+Crowdsourcing is the process of soliciting ratings from a group of repondents for a set of items and combining them in a useful way for some task, such as training a neural network classifier or a large language model.  The use of the term "crowdsourcing" is not meant to imply that the raters are untrained---the crowd may be one of oncologists, lawyers, or professors.  This note focuses on binary ratings, which arise in two-way classification problems, such as whether a patient has a specific condition, whether an image contains a traffic light, whether one consumer product is better than another, whether an action is ethical, or whether one output of a large language model is more truthful than another. 
 
-An example application analyzed later involves classifying dental X-rays for caries, a kind of pre-cavity [@espeland1989].  There are thousands of X-rays, each of which is rated positive or negative for caries by a handful of dentists.  The dentists showed surprisingly little agreement, and very little consensus (complete agreement among dentists for an item), especially in the positive cases.  The dentists also varied dramatically in the number of cases each rated as having caries.  Another example analyzed later is a data set of pairs of sentences, with the goal being to classify pairs where the first sentence implies the second sentence, the recognizing textual entailment (RTE) task [@snow2008].  This data set has thousands of items and dozens of raters, each of which rates a small subset of the items.  As with the dentistry data, there is surprisingly low agreement for what sounds like a simple task.  A third example is image classification, where digital images are classified by subject matter---one of the earliest applications of crowdsourcing for classification in machine learning was for classifying images of Venus as to whether there was a volcano present.
+This note considers two specific data sets.  The first data set involves dental X-rays being rated as positive or negative for caries, a kind of pre-cavity [@espeland1989].  There are thousands of X-rays, each of which is rated positive or negative for caries (a pre-cavity) by a handful of dentists.  The dentists showed surprisingly little agreeemnt and consensus, especially in cases where at least one dentist rated the X-ray positive for caries.  The dentists also varied dramatically in the number of cases each rated as having caries, indicating bias toward positive or negative ratings.  The second data set consists of pairs of sentences, which are rated positive if the first entails the second.  @snow2008 collected ratings on Mechanical Turk for thousands of sentence pairs, using dozens of raters, each of whom rated only a subset of the items. Natural language semantics tasks are notoriously difficult, and thus it is not surprising that the rater agreement level is low.
 
-There are several tasks for which crowdsourcing is used, and a rating model improves performance on all of them over heuristic baselines.  The most common task is to generate a "gold standard" data set, where a single category (or label) is assigned to each item.  In terms of generating representative data, it is best to sample data according to its probability (i.e., follow the generative model) rather than to choose the "best" (i.e., highest probability) rating for each item.  
 
-If the goal of creating a gold standard data set is to train a machine learning classifier, the second section of this paper shows why it is better for downstream accuracy to train with a probabilistic corpus that retains information about rating uncertainty.  Barring that, it is far better to sample labels according to their posterior probability in the rating model than to choose the "best" label.  In particular, majority voting schemes among raters will be later shown to e sub-optimal compared to sampling, which is in turn dominated by training with the probabilities (a kind of Rao-Blackwellization).  An even better approach is to jointly train a classifier and analyze rating data.
 
-A second task for crowdsourcing is to understand a coding standard, which is the instruction set guiding the rating.  Someone generates instructions for how data is to be rated, and its understandability can be understood directly by looking at posterior uncertainty of items, and indirectly by evaluating raters.
 
-A third task for crowdsourcing or rating is to understand the population of raters.  This might be something like the population prevalence of hate speech on a web site.  For that, a rating model will infer a prevalence, perhaps conditioned on item-level covariates.
+# The Five Tasks of Crowdsourcing
 
-A fourth task for crowdsourcing is to understand the population of items.  What makes an item hard to annotate?  What makes an item discriminative?  What is the prevalence of positive items?  Population prevalence is the primary focus of disease diagnostic models in epidemiology---the diagnosis of individuals is often taken as secondary.
+There are several tasks to which crowdsourcing is applied, and a rating model improves performance on all of them over heurstic baselines like majority voting for category and indirect measurements like inter-annotator agreement statistics to measure task difficulty.
 
-A fourth task is to understand the population(s) of raters.  This is important when managing raters for multiple crowdsourcing tasks.  For example, it will be possible to infer the rate of spammers and the rate of high quality raters.  The number of raters required for high quality joint ratings may also be assessed.  Raters with high bias or low accuracy may be coached to become better.
+1. *Inferring a gold-standard data set.* The first and foremost application of crowdsourcing is to generate a "gold standard" data set, where a single category (or label) is assigned to each item.  In terms of generating representative data, it is best to sample data according to its probability (i.e., follow the generative model) rather than to choose the "best" rating for each item according to some metric such as highest probability, which is similar to the commonly used heuristic of majority vote.  If the goal of creating a gold standard data set is to train a machine learning classifier, the second section of this paper shows why it is better for downstream accuracy to train with a probabilistic corpus that retains information about rating uncertainty.  Barring that, it is far better to sample labels according to their posterior probability in the rating model than to choose the "best" label.  In particular, majority voting schemes among raters will be later shown to e sub-optimal compared to sampling, which is in turn dominated by training with the probabilities (a kind of Rao-Blackwellization).  An even better approach is to jointly train a classifier and analyze rating data [@raykar2010].
 
-A fifth task, though arguably part of the rating task itself, is active learning.  How may items and raters be selected to gather the most information for a task for the least cost?  This problem is related to traditional survey sampling.
+2. *Inferring population prevalence.* The second most common application of crowdsourcing is to understand the probability of positivity among items in the population represented by the crowdsourcing data.  This is particularly common in epidemiology, where the probability of positive outcomes is the prevalence of the disease in the (sub)population.  It can also be used to analyze the prevalence of hate speech on a social media site or bias in televised news, the prevalence of volcanos on Venus, or the prevalence of positive reviews for a restaurant.
 
-One of the main applications of rating models is in crowdsourcing the work of untrained or lightly trained workers.  These same models are also useful for combining expert opinions---experts will just have higher accuracy than non-experts.  
-Rating models show up in multiple fields, including educational testing, from where we will draw much of the inspiration for the contribution here, in epidemiology where they are applied to diagnostic tests [@dawid1979,@albert2004], in sociology where they are applied to exploring cultural norms [@romney1986, @batchelder1988], and in data curation for machine learning where they are applied to human feedback on classification or other problems [@smyth1994,@snow2008,@raykar2010].  As further examples, human tags on images are used to train large-scale image classifiers like ImageNet, which has over a million images classified into a thousand classes [@deng2009].  As another example, crowdsourced ratings of language model output are used as a fine-tuning step that adjusts a foundational large language model like GPT-4, which is trained to complete text, into a chatbot like ChatGPT that is (imperfectly) trained to be helpful, truthful, and harmless [@ouyang2022,@rafailov2024].
+3. *Understanding and improving the coding standard.* The third most common application of crowdsourcing is to understand the coding standard, which is the rubric under which rating is carried out.  Typically this is measured through inter-annotator agreement, but rating models provide finer-grained analysis of sensitivity and specificity of raters.  
+
+4. *Understanding and improving raters.* What is the mean sensitivity and specificity and how does it vary among raters?  Are sensitivity an specificity anticorrelated or correlated in the population? This understanding can be fed back to the raters themselves for ongoing training.  For example, American baseball umpires have extensive feedback on how they call balls and strikes as measured against a very accurate machine's call, which has led to much higher accuracy and consistency among umpires [@flannagan2024].  Understanding rater populations, such as those available through Mechanical Turk or Upwork, is important when managing raters for multiple crowdsourcing tasks.  For example, it will be possible to infer the rate of spammers and the rate of high quality raters.  The number of raters required for high quality joint ratings may also be assessed.  
+
+5. *Understanding the items.* A fifth task that is rarely considered in the crowdsourcing literature is to understand the structure of the population of items. For example, which items are difficult to rate and why? Which items simply have too little signal to be consistently rated?  Which items live on the boundary of the rating decision boundary and which live far away? Which items have high discrimination and why? A discriminative item is one which cleanly separates high ability from low ability raters in their ability to rate it correctly.  This is the primary focus of educational testing, where the items are test questions and the raters are students.  A good test will be composed of questions at a variety of difficulty levels with high discrimination.
+
+
+
+# Contributions and Previous Work
+
+## Contributions
+
+The primary contribution of this work is the expansion of rating models to account for item variation in the form of difficulty, discriminability, and guessability.  A space of models along five dimensions is considered and thoroughly evaluated using two medium-sized rating data sets.  Only models with item-level effects for difficulty and rater effects distinguishing sensitivity and specificity are able to pass posterior predictive checks [@rubin1984, @gelman1996].  Posterior predictive checks are the Bayesian equivalent of $\chi^2$ goodness of fit tests in regression, which test a "null" of the fitted model against the data to evaluate whether the data could have reasonably been generated by the model.
+
+A secondary contribution is a parameterization of sensitivity and specificity on the log odds scale that restricts parameters to a cooperative range by jointly constraining sensitivity and specificity to lie above the spam line.  Without this constraint, the rating model likelihoods have two modes, one in which raters are cooperative and one in which prevalence is inverted and the raters are adversarial.  An adversarial rater is one who consistently provides the wrong rating (i.e., they know the answer and provide the wrong answer).  The spam line is determined by random guessing---spammy annotators have a sensitivity equal to one minus their specificity.
+
+An implicit contributon is a replicable case study with open-source implementations of all of these models in Stan, a probabilistic programming language [@carpenter2017].  The code lays out a framework for comparing models which form a lattice of continuous expansions.
+
+
+## Previous work
+
+Rating models show up in multiple fields, including educational testing, from which the model variants introduced here are derived [@lazarsfeld1950,@lord1968,@rasch1960].  Rating models are also applied in epidemiology, both for multiple diagnostic testing [@albert2004] and extracting health status information from patient records [@dawid1979].  In sociology, rating models were independently developed for cultural consensus theory [@romney1986, @batchelder1988].  More recently, they have become popular for providing human feedback for classification of images
+[@smyth1994, @raykar2010]; human ratings are the basis of massive data sets of millions of images and thousands of classes like ImageNet [@deng2009].
+Rating models have long been popular for natural language tasks [@snow2008,@passonneau2014].  More recently, crowdsourced ratings of language model output are used as a fine-tuning step that adjusts a foundational large language model like GPT-4, which is trained to complete text, into a chatbot like ChatGPT that is (imperfectly) trained to be helpful, truthful, and harmless [@ouyang2022, @rafailov2024].
+
+
+## Extensions
+
+A natural extension is to $K$-way categorical ratings, such as classifying a dog image by species, classifying an article in a newspaper by topic, rating a movie on a one to five scale, classifying a doctor's visit with an ICD-10 code, and so on.  Most of the work on ratings has been in a more general categorical setting.  With more than two categories, sensitivity and specificity are replaced with categorical responses based on the latent true category.  Discrimination and guessing act the same way, but difficulty must be replaced with a more general notion of a categorical item level effect, which may represent either focused alternatives (a border collie is confusible with an Irish shepherd) or diffuse (e.g., can't tell what's in the image).
+
+With enough raters, these models may also be extended hierarchically to make population-level inferences about the distribution of rater abilities or item difficulties [@paun2018].  Several of the crowdsourcing tasks may be combined to select raters and items to rate online with active learning, which is a form of bandit problem often addressed through reinforcement learning. With a hierarchical model, inference may be expanded to new raters.
+
+It is also straightforward to extend a rating model to ordered responses, counts, proportions, distances, or arbitary real numbers such as geolocations.  All that needs to change is the response model and the representation of the latent truth---the idea of getting noisy ratings and inferring a ground truth remains.  As an example, suppose we have images of Venus and markings on an image of where the rater thinks a volcano is located.  The true location is represented as a latitude and longitude and rater responses can be multivariate normal centered around the true, but unknown, location.  
 
 
 # A General Crowdsourcing Model
@@ -102,18 +130,18 @@ Without a guessing parameter, as difficulty goes to infinity, the probability a 
 
 The full model follows the item-response theory three-parameter logistic (IRT-3PL) model, where the probability that rater $j$ assigns the correct rating to item $i$ is given by
 \begin{equation}
-y \sim \textrm{Bernoulli}\!\left(\lambda_i + (1 - \lambda_i) \cdot \textrm{logit}^{-1}(\delta_i \cdot (\alpha^k_j - \beta_i))\right),
+c_n \sim \textrm{Bernoulli}\!\left(\lambda_i + (1 - \lambda_i) \cdot \textrm{logit}^{-1}(\delta_i \cdot (\alpha^k_j - \beta_i))\right),
 \end{equation}
 where $k = \textrm{sens}$ if $z_i = 1$ and $k = \textrm{spec}$ if $z_i = 0.$
 
-In order to convert to a distribution over rating, the probability of a 1 outcome must be flipped when $z_i = 0$ so that a 90\% accurate rating results in a 90% chance of a 0 rating,
+In order to convert to a distribution over rating, the probability of a 1 outcome must be flipped when $z_i = 0$ so that a 90\% accurate rating results in a 90% chance of a 0 rating.  Thus the rating is given by
 \begin{equation}
 y \sim
 \begin{cases}
 \textrm{Bernoulli}\!\left(\lambda_i + (1 - \lambda_i) \cdot \textrm{logit}^{-1}\!\left(\delta_i \cdot \left(\alpha^\textrm{sens}_j - \beta_i\right)\right)\right)
 & \textrm{if } z_i = 1, \textrm{ and}
 \\[4pt]
-\textrm{Bernoulli}\!\left(1 - \left( \lambda_i + (1 - \lambda_i) \cdot \textrm{logit}^{-1}\!\left(\delta_i \cdot \left(\alpha^\textrm{sens}_j - \beta_i\right)\right)\right)\right)
+\textrm{Bernoulli}\!\left(1 - \left( \lambda_i + (1 - \lambda_i) \cdot \textrm{logit}^{-1}\!\left(\delta_i \cdot \left(\alpha^\textrm{spec}_j - \beta_i\right)\right)\right)\right)
 & \textrm{if } z_i = 0.
 \end{cases}
 \end{equation}
@@ -125,11 +153,13 @@ The second case ($z_i = 0$) reduces to
 
 ### Adding predictors
 
-If covariates are available that inform the parameters, they may be incorporated in a very general way through a generalized linear model.
+If item-level or rater-level covariates are available, they may be
+used to inform the parameters through a regression in the form of a
+generalized linear model.
 
 Suppose there are item-level covariates $x_i \in \mathbb{R}^K$.  With a parameter vector $\gamma \in \mathbb{R}^K$, the generative model for the category of an item may be extended to a logistic regression,
 \begin{equation}
-z_i \sim \textrm{bernoulli}\!\left( x_i \cdot \beta \right).
+z_i \sim \textrm{Bernoulli}\!\left( x_i \cdot \beta \right).
 \end{equation}
 Here, $x_i \in \mathbb{R}^K$ is considered a row vector because it is a row of the data matrix $x \in \mathbb{I \times K}$.  An intercept for the regression may be added by including a column of 1 values in $x$.  The resulting coefficients will act as a classifier for new items by generating a covariate-specific prevalence.  This motivated @raykar2010's combination of Dawid and Skene's rating model and a logistic regression of this form. 
 
