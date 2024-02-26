@@ -1,0 +1,68 @@
+\documentclass[11pt]{article}
+
+\usepackage{tikz}
+
+\begin{document}
+
+\usetikzlibrary{positioning, arrows.meta}
+\begin{tikzpicture}[box/.style={draw, rectangle, minimum height=1.5cm, minimum width=2cm, align=center}, 
+                    line/.style={-Stealth}]
+
+% Column 0
+\node[box] (ABCDE) {ABCDE};
+% Column 1
+\node[box, right=3cm of ABCDE] (ABCD) {ABCD};
+\node[box, below=of ABCD] (ABCE) {ABCE};
+\node[box, below=of ABCE] (ABDE) {ABDE};
+% Column 2
+\node[box, right=3cm of ABCD] (ABC) {ABC};
+\node[box, below=of ABC] (ABD) {ABD};
+\node[box, below=of ABD] (ACD) {ACD};
+\node[box, below=of ACD] (BCD) {BCD};
+% Column 3
+\node[box, right=3cm of ABC] (AB) {AB};
+\node[box, below=of AB] (AC) {AC};
+\node[box, below=of AC] (AD) {AD};
+\node[box, below=of AD] (BC) {BC};
+\node[box, below=of BC] (BD) {BD};
+\node[box, below=of BD] (CD) {CD};
+% Column 4
+\node[box, right=3cm of AB] (A) {A};
+\node[box, below=of A] (C) {C};
+\node[box, below=of C] (D) {D};
+% Column 5
+\node[box, right=3cm of A] (dash) {--};
+
+% Lines
+\draw[line] (ABCDE) -- (ABCD);
+\draw[line] (ABCDE) -- (ABCE);
+\draw[line] (ABCDE) -- (ABDE);
+\draw[line] (ABCD) -- (ABC);
+\draw[line] (ABCD) -- (ABD);
+\draw[line] (ABCD) -- (ACD);
+\draw[line] (ABCD) -- (BCD);
+\draw[line] (ABCE) -- (ABC);
+\draw[line] (ABDE) -- (ABD);
+\draw[line] (ABC) -- (AB);
+\draw[line] (ABC) -- (AC);
+\draw[line] (ABC) -- (BC);
+\draw[line] (ABD) -- (AB);
+\draw[line] (ABD) -- (AD);
+\draw[line] (ABD) -- (BD);
+\draw[line] (ACD) -- (AC);
+\draw[line] (ACD) -- (AD);
+\draw[line] (ACD) -- (CD);
+\draw[line] (BCD) -- (BC);
+\draw[line] (BCD) -- (BD);
+\draw[line] (BCD) -- (CD);
+\draw[line] (AB) -- (A);
+\draw[line] (AC) -- (A);
+\draw[line] (AC) -- (C);
+\draw[line] (BC) -- (C);
+\draw[line] (BD) -- (D);
+\draw[line] (CD) -- (C);
+\draw[line] (CD) -- (D);
+\draw[line] (A) -- (dash);
+\draw[line] (C) -- (dash);
+\draw[line] (D) -- (dash);
+\end{tikzpicture}

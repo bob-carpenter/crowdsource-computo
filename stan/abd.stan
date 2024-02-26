@@ -15,10 +15,10 @@ transformed parameters {
 #include LOG-LIKELIHOOD.stan
 }
 model {
-  pi ~ uniform(0, 1);
-  alpha_acc ~ logistic(0, 1);
-  beta ~ logistic(0, 1);
-  sum(beta) ~ normal(0, 1);  // soft sum to zero
+  pi ~ beta(2, 2);
+  alpha_acc ~ normal(1, 2);
+  beta ~ normal(0, 1);
+  // sum(beta) ~ normal(0, 1);  // soft sum to zero
   target += log_lik;
 }
 #include GQ.stan

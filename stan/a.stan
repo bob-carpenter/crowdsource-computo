@@ -14,9 +14,9 @@ transformed parameters {
 #include LOG-LIKELIHOOD.stan
 }
 model {
-  pi ~ uniform(0, 1);
-  alpha_spec ~ logistic(2, 1);
-  alpha_sens ~ logistic(1, 1);
+  pi ~ beta(2, 2);
+  alpha_spec ~ normal(2, 2);
+  alpha_sens ~ normal(1, 2);
   beta ~ normal(0, 1);
   delta ~ lognormal(0, 0.25);
   target += log_lik;

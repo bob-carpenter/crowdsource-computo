@@ -14,12 +14,12 @@ transformed parameters {
 #include LOG-LIKELIHOOD.stan
 }
 model {
-  pi ~ uniform(0, 1);
-  alpha_spec ~ normal(0, 3);
-  alpha_sens ~ normal(0, 3);
+  pi ~ beta(2, 2);
+  alpha_spec ~ normal(2, 2);
+  alpha_sens ~ normal(1, 2);
   beta ~ normal(0, 1);
-  delta ~ lognormal(0, 0.5);
-  lambda ~ beta(5, 5);
+  delta ~ lognormal(0, 0.25);
+  lambda ~ beta(2, 2);
   target += log_lik;
 }
 #include GQ.stan
