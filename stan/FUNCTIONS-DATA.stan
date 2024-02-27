@@ -24,7 +24,18 @@ functions {
       count[rater[n]] += rating[n];
     }
     return count;
-  }    
+  }
+  int lte_sim_rng(int x, int y) {
+    return x == y ? bernoulli_rng(0.5) : x < y;
+  }
+  array[] int lte_sims_rng(array[] int x, array[] int y) {
+    int N = size(x);
+    array[N] int ltes;
+    for (n in 1:N) {
+      ltes[n] = lte_sim_rng(x[n], y[n]);
+    }
+    return ltes;
+  }
 }
 data {
   int<lower=0> I;

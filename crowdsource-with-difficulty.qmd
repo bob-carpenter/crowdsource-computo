@@ -361,7 +361,9 @@ ABE
 
 # Empirical Evaluations
 
-All of the models were fit on the dentistry data using two chains of 1000 warmup and 1000 sampling draws each using the default settings of Stan.  All $\widehat{R}$ values were less than 1.01, indicating the draws are consistent with convergence.  
+The posteriors of all 18 models introduced above were sampled for two data sets. The first data set consists of 5 dentists rating each of roughly 4000 dental X-rays for caries (a kind of pre-cavity) [@espeland1989].  The second is nearly 200 Mechanical Turkers, each rating a subset of roughly 3000 pairs of sentences for entailment [@snow2008].
+
+The models were coded in Stan (version 2.33) and fit with default sampling settings using CmdStanPy (version 1.20).  The default sampler is the multinomial no-U-turn sampler, an adaptive form of Hamiltonian Monte Carlo [@hoffman, @betancourt2017] that adapts a diagonal metric.  The default number of chains is four, and the default runs 1000 warmup iterations (for burnin and adaptation) and 1000 sampling iterations.  All sampling runs ended with split-$\widehat{R}$ values less than 1.01 for all parameters (prevalence, rater parameters, and item parameters), indicating consistency with convergence to approximate stationarity [@gelman2013].
 
 \begin{equation}
 \begin{array}{|l||r|r|}

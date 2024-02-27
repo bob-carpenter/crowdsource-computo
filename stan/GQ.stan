@@ -24,14 +24,10 @@ generated quantities {
     }
 
     votes_sim = vote_count(rating_sim, item, rater, I, J);
-    for (j in 1:J + 1) {
-      votes_sim_lt_data[j] = votes_sim[j] < votes_data[j];
-    }
-
+    votes_sim_lt_data = lte_sims_rng(votes_sim, votes_data);
+    
     rater_sim = rater_count(rating_sim, rater, J);
-    for (j in 1:J) {
-      rater_sim_lt_data[j] = rater_sim[j] < rater_data[j];
-    }
+    rater_sim_lt_data = lte_sims_rng(rater_sim, rater_data);
   }   
 }
 
