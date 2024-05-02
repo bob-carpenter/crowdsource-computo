@@ -50,12 +50,6 @@ init = {
     'lambda': np.full(data['I'], 0.5)
 }    
 
-J = data['J']
-    
-rater_labels = [f"rater_sim[{i}]" for i in range(1, J)]
-rater_lt_labels = [f"rater_sim_lt_data[{i}]" for i in range(1, J)]
-votes_labels = [f"votes_sim[{i}]" for i in range(1, J + 1)]
-votes_lt_labels = [f"votes_sim_lt_data[{i}]" for i in range(1, J + 1)]
 
 # models = ['a', 'ab', 'abc', 'abcd', 'abcde', 'abce', 'abd', 'abde', 'ac', 'acd', 'ad', 'bc', 'bcd', 'bd', 'c', 'cd', 'd', 'full']
 models = ['a', 'ab', 'abc']
@@ -64,24 +58,21 @@ results = []
 for model in tqdm(models, desc="Processing Models"): 
     print(f"***** Processing model: {model}")
     draws = sample(f'../stan/{model}.stan', data, init)
-    post_summary = draws.summary()
-    # print(post_summary)
-    post_means = post_summary['Mean']
-    rater_lt_sim = post_means[rater_lt_labels]
-    votes_lt_sim = post_means[votes_lt_labels]
+    rater_lt_sim = draws.stan_variable('rater_sim_lt_data')
+    votes_lt_sim = draws.stan_variable('votes_sim_lt_data')
     
-    # Calculating two-sided p-values
-    raters_p = p_twosided(rater_lt_sim)
-    votes_p = p_twosided(votes_lt_sim)
+    # Calculate one-sided p-values as proportions of ones
+    rater_p_values = np.mean(rater_lt_sim, axis=0)  
+    votes_p_values = np.mean(votes_lt_sim, axis=0)
 
-    min_raters_p = min_p_twosided(rater_lt_sim)
-    min_votes_p = min_p_twosided(votes_lt_sim)
+    # Calculating two-sided p-values
+    raters_p = p_twosided(rater_p_values)
+    votes_p = p_twosided(votes_p_values)
+
 
     # Gathering results
     stats = {
         'model': model,
-        'min_raters_p': min_raters_p,
-        'min_votes_p': min_votes_p,
         'mean_raters_p': np.mean(raters_p),
         'median_raters_p': np.median(raters_p),
         'std_dev_raters_p': np.std(raters_p),
