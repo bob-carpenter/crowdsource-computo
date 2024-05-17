@@ -1,0 +1,966 @@
+---
+title: "Training a classifier with a probabilistic data set:"
+subtitle: "Discrete and weighted training with Bayes and maximum likelihood"
+author: "Bob Carpenter"
+date: "last-modified"
+jupyter: python3
+filters:
+    - include-code-files
+format:
+  html:
+    theme: cosmo
+    css: style.css
+    highlight-style: atom-one
+    mainfont: Palatino
+    fontcolor: black
+    monobackgroundcolor: white
+    monofont: "Menlo, Lucida Console, Liberation Mono, DejaVu Sans Mono, Bitstream Vera Sans Mono, Courier New, monospace"
+    fontsize: 13pt
+    linestretch: 1.4
+    number-sections: true
+    number-depth: 2
+    toc: true
+    toc-location: right
+    cap-location: bottom
+    format-links: false
+    embed-resources: true
+    anchor-sections: true
+  pdf:
+    include-in-header:
+      - file: header.tex
+    mainfont: Palatino
+    number-sections: true
+    number-depth: 2
+    margin-bottom: 1in
+    fig-pos: "t!"
+    biblio-title: "References"
+    biblio-style: natbib
+    link-citations: true
+    link-bibliography: true
+    pdf-engine: xelatex
+    highlight-style: github
+bibliography: references.bib
+---
+
+# Introduction
+
+This short technical note evaluates several approaches to training
+logistic regression models when the probabilities of categorical
+outcomes are provided as data.  The motivating example is the
+probability estimated by a model of data rating (also known as coding,
+annotation, labeling, and crowdsourcing), such as that of @dawid1979.
+Three out of five dentists asking as raters might say an X-ray shows a
+cavity and a data rating model taking into account those dentist's
+biases and accuracy to infer an 85% chance that the X-ray shows a
+cavity.
+
+The first result is that to create a corpus with a discrete outcome
+per item, it is more effective to sample the category for each item
+given its probability distribution than it is to assign it the most
+probable category. Approaches to crowdsourcing using a majority vote
+approach are instances of the suboptimal most-probable strategy.
+
+The second result is that it is even better to use the category
+probabilities directly, training the classifier with all categories
+weighted by their probabilities. This result follows from the
+Rao-Blackwell theorem in the Bayesian setting.
+
+The third result is that the best approach is to transform the
+probabilities to their log odds and then fit a linear regression.
+This result follows because logistic regression implies a log odds
+link and binomial sampling.
+
+Evaluation is in terms of two proper scoring metrics, square error in
+parameter estimation and held-out data log likelihood.  Two widely
+used estimators are compared, a Bayesian posterior mean estimator and
+a frequentist penalized maximum likelihood estimator.  Bayesian
+posterior predictive inference is also compared to inference based by
+plugging in a frequentist point estimate.
+
+With simulated data, all three results hold for parameter estimation
+and predictive inference with both Bayesian and frequentist
+approaches.  In situations where the data follows the model's data
+generating process, the Bayesian approach modestly outperforms the
+frequentist approach.  This last result is not surprising given that
+Bayesian estimates are designed to minimize expected square error.
+
+# Logistic regression
+
+Logistic regression applies in the situation where there are $N$
+binary observations $y_n \in \{ 0, 1 \}$ and each observation
+comes with a (row) vector $x_n \in \mathbb{R}^D$ of covariates (also called
+features or predictors).  Logistic regression is a generalized linear
+model, with a parameter vector $\beta \in \mathbb{R}^D$ of
+regression coefficients (also called weights), the link function is
+log odds (also known as logit), and the family is binomial, so the
+sampling distribution is
+$$
+Y_n \sim \textrm{binomial}(\textrm{logit}^{-1}(x_n \cdot \beta)),
+$$
+where $\textrm{logit}:(0, 1) \rightarrow \mathbb{R}$ and its inverse
+$\textrm{logit}^{-1}:\mathbb{R} \rightarrow (0, 1)$ are defined by
+$$
+\textrm{logit}(u) = \log \frac{u}{1 - u}
+\qquad
+\textrm{logit}^{-1}(v) = \frac{1}{1 + \exp(-v)}.
+$$
+The definition of the binomial distribution implies
+$$
+\Pr[Y_n = 1 \mid X_n = x_n] = \textrm{logit}^{-1}(x_n \cdot \beta).
+$$
+
+### A digression on "discriminative" models
+
+In machine learning, logistic regression models are often called
+"discriminative" because they do not typically provide a
+data-generating process for the covariates.  In a regression, the
+process through which the covariates is generated does not affect the
+coefficient estimates (see section 14.1, page 354, of @gelman2013).
+With a model $p(x \mid \phi)$ for the covariates, the joint model
+factors
+$$
+p(x, y, \beta, \phi) = p(x \mid \phi) \cdot p(y \mid x, \beta),
+$$
+and thus so does the posterior for the regression coefficients,
+$$
+p(\beta \mid x, y) \propto p(\beta) \cdot p(y \mid x, \beta).
+$$
+A model $p(x \mid \phi)$ of the covariates, if available, can be used
+to handle missing data.
+
+# Data simulation
+
+For simplicity, consider simulating the parameter vector $\beta \in
+\mathbb{R}^D$ as standard normal,
+$$
+\beta \sim \textrm{normal}(0, 1).
+$$
+
+Given a data size $N$, generate a covariate matrix $x \in
+\mathbb{R}^{N \times D}$ by taking
+$$
+x_n \sim \textrm{multi-normal}(0, \Sigma),
+$$
+where $\Sigma \in \mathbb{R}^{D \times D}$ is a full rank covariance
+matrix (i.e., it is symmetric and positive definite).  The first
+column will then be set to 1 to act as an intercept.
+
+To introduce
+correlation among the predictors, let $\Sigma$ be the unit scale random-walk
+covariance matrix defined by a correlation value $\rho \in (-1, 1)$ by
+$$
+\Sigma_{i, j} = \rho^{| i - j |}.
+$$
+For example, with $D = 20$ and $\rho = 0.9$, the first row of the
+covariance matrix is
+$$
+\Sigma_{1, 1:20} =
+\begin{bmatrix}
+1.00 & 0.90 & 0.81 & 0.73 & 0.66 & \cdots & 0.19 & 0.17 & 0.15 & 0.14
+& 0.12
+\end{bmatrix}.
+$$
+
+## Follow the data generating process
+
+Following the true data generating process, outcomes are sampled from
+a binomial distribution after applying the inverse log odds function,
+$$
+Y_n \sim \textrm{binomial}\!\left(\textrm{logit}^{-1}(x_n \cdot \beta)\right).
+$$
+
+## Choose the most probable outcome
+
+A common approach in machine learning to deal with crowdsourcing with
+multiple data coders is to take a majority vote or by the most
+probable outcome in the probabilistic model.  This corresponds to
+setting
+$$
+Y_n =
+\begin{cases}
+1 & \textrm{if } \Pr[Y_n = 1 \mid X_n = x_n] > \frac{1}{2}, \textrm{
+and}
+\\[4pt]
+0 & \textnormal{otherwise}.
+\end{cases}
+$$
+The name $Y_n$ is the same as in the previous section, but this is a
+different random variable that is used as an alternative to the
+previous definition (hence the same notation).  The variable $Y_n$
+does not follow the logistic regression data generating process, which
+leads to poor performance.
+
+## Outcome probabilities
+
+A probabilistic corpus assigns each outcome a probability
+$$
+p_n = \Pr[Y_n = 1 \mid X_n = x_n].
+$$
+Direct probability estimates support weighted logistic regression
+training and also linear regression on the log odds (both of which are
+defined below).
+
+# Priors, penalties, and objectives
+
+## Bayesian prior
+
+To complete the Bayesian model, which is a joint probability function
+$p(y, \beta),$ take independent standard normal priors for the
+coefficients $d \in 1{:}D,$
+$$
+\beta_d \sim \textrm{normal}(0, 1).
+$$
+This prior matches the data generating process so that the full joint
+model is well specified for the data.
+
+The full joint Bayesian probability function is defined by combining
+the prior and sampling distributions, 
+\begin{align}
+p(y, \beta)
+&= p(y \mid \beta) \cdot p(\beta).
+\\[4pt]
+&= \prod_{n=1}^N \textrm{bernoulli}(y_n \mid \textrm{logit}^{-1}(x_n \cdot
+\beta))
+\cdot \prod_{d=1}^D \textrm{normal}(\beta_d \mid 0, 1).
+\end{align}
+
+Given the prior and sampling distribution, the posterior distribution is
+$$
+p(\beta \mid y) \propto p(y \mid \beta) \cdot p(\beta).
+$$
+
+## Frequentist penalty function
+
+The Bayesian sampling distribution is used to define the frequentist
+log likelihood function,
+\begin{align}
+\mathcal{L}(\beta)
+&= \log \left( \prod_{n=1}^N \textrm{bernoulli}(y_n \mid \textrm{logit}^{-1}(x_n
+\cdot \beta)) \right)
+\\[4pt]
+&= \sum_{n=1}^N \log \textrm{bernoulli}\!\left(y_n \mid \textrm{logit}^{-1}(x_n \cdot \beta)\right).
+\end{align}
+
+To mirror the Bayesian analysis, assume a quadratic penalty function,
+$$
+\mathcal{P}(\beta) = \frac{1}{2} \beta^\top \beta.
+$$
+This penalty is called an $L^2$ penalty because it's based on the (half
+of the squared) $L^2$-norm of $\beta$ (i.e., its squared Euclidean
+length). Using an $L^2$ penalty function for penalized maximum likelihood
+estimation is known as ridge regression.  The $L^2$ penalty shrinks
+estimates toward zero by penalizing the components of $\beta$
+quadratically.
+
+The objective function for frequentist estimation is known as the
+penalized maximum likelihood function and is defined by
+$$
+\mathcal{F}(\beta) = \mathcal{L}(\beta) - \mathcal{P}(\beta).
+$$
+Frequentist estimation proceeds by optimization over the objective.
+
+## Frequentist and Bayesian objectives are the same
+
+The frequentist objective function is just the log posterior plus a
+constant,
+$$
+\mathcal{F}(\beta) = \log p(\beta \mid y) + \textrm{const}.
+$$
+The constant, which is not necessary for Bayesian inference using
+Markov chain Monte Carlo sampling, is $\log p(y).$
+
+This relation does not imply that the Bayesian and frequentist
+estimates will be the same.  Full Bayesian inference will average
+over uncertainty rather than optimize.
+
+# Estimation
+
+For each observation $n \in 1{:}N,$ assume a covariate (row) vector $x_n
+\in \mathbb{R}^D$ (so that $x \in \mathbb{R}^{N \times D}$ is an $N
+\times D$ matrix.
+
+## Estimation from training data
+
+The first two cases of simulation, sampling from the data generating
+process and assigning the most probable category involve data $y_n \in
+\{ 0, 1 \}$ for $n \in 1{:}N.$
+
+### Bayesian estimate from training data
+
+Given a data set $(x, y),$ the Bayesian parameter estimate that
+minimizes expected square error is the posterior mean,
+\begin{align}
+\widehat{\beta}
+&= \mathbb{E}[\beta \mid x, y]
+\\[4pt]
+&= \int_{\mathbb{R}^D} \beta \cdot p(\beta \mid x, y) \, \textrm{d}\beta.
+\end{align}
+Markov chain Monte Carlo methods produce an (approximately)
+identically distributed (but not independent) sample
+$$
+\beta^{(1)}, \ldots, \beta^{(M)} \sim p(\beta \mid x, y),
+$$
+and estimate the expectation by averaging the draws, setting
+$$
+\widehat{\beta}
+\approx
+\frac{1}{M} \sum_{m=1}^M \beta^{(m)}.
+$$
+As $M \rightarrow \infty,$ the Monte Carlo approximation becomes exact
+in the limit.  With $M = 1,000,$ and not too much correlation, there
+is usually around 2 digits of accuracy. 
+
+
+### Frequentist estimate from data
+
+The frequentist estimate is the penalized maximum likelihood estimate,
+$$
+\beta^* = \textrm{arg max}_\beta \ \mathcal{F}(\beta).
+$$
+Because of the relation between the Bayesian and frequentist
+objectives for this problem, this estimate is also called the maximum
+a posterior estimate, because
+$$
+\beta^* = \textrm{arg max}_\beta \ p(\beta \mid x, y)
+$$
+
+## Probability-weighted estimation
+
+In probability weighted training, the objective function needs to be
+modified to accept probabilities $p_n \in (0, 1)$ for outcomes $n \in
+1{:}N.$
+
+### Bayesian objective
+
+The Bayesian objective is defined by weighting the outcomes probabilistically,
+$$
+p(\beta \mid x, p)
+\propto p(\beta)
+        \cdot \prod_{n=1}^N
+	       \strut p(Y_n = 1 \mid x_n, \beta)^{p_n}
+               \cdot p(Y_n = 0 \mid x_n, \beta)^{1 - p_n},
+$$
+which on the log scale is
+$$
+\log p(\beta \mid x, p)
+= + \textrm{const}
+  + \log p(\beta)
+  + \sum_{n=1}^N \strut p_n \log p(Y_n = 1 \mid x_n, \beta)
+                        + (1 - p_n) \log p(Y_n = 0 \mid x_n, \beta)
+$$
+
+This objective is known as the Rao-Blackwellized form of our original
+objective.  The Rao-Blackwell theorem entails that working in
+expectation, as we are doing here, perfroms no worse than sampling in
+terms of estimation error; in practice, Rao-Blackwellizing usually
+brings substantial gains, especially in the context of discrete
+sampling as we are doing here.
+
+For estimation, we use posterior means as before, swapping in this
+objective for the previous one.
+
+### Frequentist objective
+
+The frequentist objective here mirrors the Bayesian objective,
+$$
+\mathcal{F}(\beta)
+= - \frac{1}{2}\beta^2
+   + \sum_{n=1}^N \strut p_n \log p(Y_n = 1 \mid x_n, \beta)
+                        + (1 - p_n) \log p(Y_n = 0 \mid x_n, \beta)
+$$  
+This objective is optimized for estimation.
+
+
+## Regression on the log odds
+
+The final estimation technique involves recognizing that when working
+in expectation, the log odds link function can be used to transform
+the probabilistic data to the log odds scale, at which point
+estimation can proceed via linear regression.  Because the location
+and scale parameters in a linear regression are conditionally
+independent given the data, the scale parameter is fixed to unity.
+
+### Bayesian regression on log odds
+
+The Bayesian objective function is defined by the data generating
+process
+$$
+\textrm{logit}(p_n) \sim \textrm{normal}(x_n \cdot \beta, 1),
+$$
+which leads to the objective function
+$$
+p(\beta \mid x, p)
+\propto \left( \prod_{d=1}^D \textrm{normal}(\beta_d \mid 0, 1) \right)
+  \cdot \prod_{n=1}^N \textrm{normal}(\textrm{logit}(p_n) \mid x_n \cdot \beta, 1).
+$$
+On the log scale, that's
+$$
+\log p(\beta \mid x, p)
+= \left( \sum_{d=1}^D \log \textrm{normal}(\beta_d \mid 0, 1) \right)
+  + \sum_{n = 1}^N \log \textrm{normal}(\textrm{logit}(p_n) \mid x_n
+  \cdot \beta, 1)
+  + \textrm{const}.
+$$  
+
+For estimation, we use posterior means as before, swapping in this
+objective for the previous one.
+
+### Frequentist regression on log odds
+
+The frequentist objective function is the same up to a constant,
+$$
+\mathcal{F}(\beta)
+=  - \frac{1}{2} \beta^\top \cdot \beta.
++ \left( \sum_{n=1}^N \log \textrm{normal}(\textrm{logit}(p_n) \mid
+x_n \cdot \beta, 1) \right)
+$$
+This objective is optimized for estimation.
+
+
+# Predictive inference
+
+After fitting a logistic regression model, it can be used for
+prediction.  Specifically, it can be used to transform a vector of
+covariates for a new item to a probabilistic prediction of its
+category.
+
+## Bayesian posterior predictive inference
+
+Suppose the training data is a sequence of pairs $(x_n, y_n)$ where
+$x_n \in \mathbb{R}^D$ and $y_n \in \{ 0, 1 \}$ for $n \in 1{:}N,$ and
+$\beta \in \mathbb{R}^D.$
+Now suppose there are new items with covariates $\widetilde{x}_n$ for
+$n \in 1{:}\widetilde{N}.$  For a new predictor matrix $\widetilde{x}_n,$
+and array of outcomes $\widetilde{y}_n \in \{ 0, 1 \}$, the posterior
+predictive probability mass function for the outcomes is
+\begin{align*}
+p(\widetilde{y} \mid \widetilde{x}, x, y)
+&= \mathbb{E}\!\left[\widetilde{Y} \,\big|\, \widetilde{x}, x, y\right]
+\\[4pt]
+&= \int_{\mathbb{R}^D} p(\widetilde{y} \mid \widetilde{x}, \beta) \cdot p(\beta \mid
+x, y) \ \textrm{d}\beta.
+\end{align*}
+
+With a sample of MCMC draws
+$$
+\beta^{(1)}, \ldots, \beta^{(M)} \sim p(\beta \mid x, y)
+$$
+for $m \in 1{:}M,$ this quantity can be estimated as
+$$
+p(\widetilde{y} \mid \widetilde{x}, x, y)
+\approx
+\frac{1}{M} \sum_{m = 1}^M p\!\left(\widetilde{y} \,\big|\, \widetilde{x}, 
+\beta^{(m)}\right).
+$$
+
+Because of issues with floating-point numbers on computers, these
+calculations must be done on the log scale to guard against underflow
+in density functions, 
+\begin{align*}
+\log p(\widetilde{y} \mid \widetilde{x}, x, y)
+&\approx
+\log \frac{1}{M} \sum_{m = 1}^M p\!\left(\widetilde{y} \,\big|\, \widetilde{x}, 
+\beta^{(m)}\right)
+\\[4pt]
+&= -\log M + \log \sum_{m = 1}^M p\!\left(\widetilde{y} \,\big|\, \widetilde{x}, 
+\beta^{(m)}\right)
+\\[4pt]
+&= -\log M + \log \sum_{m = 1}^M \exp\!\left(\log \ p\!\left(\widetilde{y} \,\big|\, \widetilde{x}, 
+\beta^{(m)}\right)\right)
+\\[4pt]
+&= -\log M + \textrm{logSumExp}_{m=1}^M \log \ p\!\left(\widetilde{y} \,\big|\, \widetilde{x}, 
+\beta^{(m)}\right).
+\end{align*}
+
+The log-sum-of-exponentials function can be implemented in an
+arithmetically stable way for a vector $v \in \mathbb{R}^M$ as
+\begin{align*}
+\textrm{logSumExp}_{m=1}^M v_m
+&= \log \sum_{m = 1}^M \exp(v_m)
+\\
+&= \max(v) + \log \sum_{j=1}^K \exp(v_j - \max(v)).
+\end{align*}
+The stability follows from never applying $\exp()$ to a positive
+number combined with pulling the leading digits out with $\max(v).$
+
+Typically, errors are reported in terms of the expected log posterior
+density (ELPD) per item, which for $\widetilde{y} \in \{0,
+1\}^\widetilde{N}$ and $\widetilde{x} \in \mathbb{R}^{N \times D},$ is
+$$
+\textrm{ELPD} = \frac{\log p(\widetilde{y} \mid \widetilde{x}, x, y)}
+                     {\widetilde{N}}.
+$$		     
+
+
+## Frequentist plug-in inference
+
+Standard practice in machine learning fits a penalized maximum
+likelihood estimate
+$$
+\beta^*
+= \textrm{arg max}_\beta \
+  \log p(y \mid x, \beta) - \mathcal{P}(\beta),
+$$
+which is plugged in for prediction,
+$$
+p(\widetilde{y} \mid \widetilde{x}, x, y)
+\approx
+p(\widetilde{y} \mid \widetilde{x}, \beta^*).
+$$
+
+# Simulation-based evaluation
+
+## Stan models
+
+There are three objective functions in play, based on whether the data
+under consideration is given as discrete outcomes $y_n$ or
+probabilities $p_n$, and in the case of probabilities, whether they
+are transformed to log odds for a linear regression.  
+
+### Stan program for logistic regression
+
+The Stan program for logistic regression implements the following log
+posterior up to an additive constant, 
+$$
+\log p(\beta \mid x, y)
+= \log p(\beta)
+  + \sum_{n=1}^N \textrm{bernoulli}(\textrm{logit}^{-1}(x_n \cdot
+  \beta)).
+$$  
+
+```{.stan include="logistic-regression.stan"
+          filename="logistic-regression.stan"}
+```
+
+
+### Stan program for probability-weighted logistic regression
+
+The Stan program for probability-weighted logistic regression
+implements the following log posterior up to an additive constant,
+$$
+\log p(\beta \mid x, p)
+= \log p(\beta)
+  + \sum_{n=1}^N \left(
+      \begin{array}{l}
+      p_n \cdot \log \textrm{bernoulli}(1 \mid \textrm{logit}^{-1}(x_n \cdot \beta))
+      \\[2pt]
+      \ + (1 - p_n) \cdot \textrm{bernoulli}(0 \mid
+      \textrm{logit}^{-1}(x_n \cdot \beta)) 
+    \end{array}
+    \right)
+  + \textrm{const}.
+$$
+
+```{.stan include="weighted-logistic-regression.stan"
+          filename="weighted-logistic-regression.stan"}
+```
+
+### Stan program for log odds linear regression
+
+The Stan program for linear regression on the log odds implements the
+following log posterior up to an additive constant.
+$$
+\log p(\beta \mid x, p)
+= \log p(\beta)
+  + \sum_{n = 1}^N
+    \log \textrm{normal}(\textrm{logit}(p_n) \mid x_n \cdot \beta, 1)
+  + \textrm{const}.
+$$
+
+```{.stan include="log-odds-linear-regression.stan"
+          filename="log-odds-linear-regression.stan"}
+```
+
+
+## Evaluation of estimation
+
+The evaluation is coded in Python using the CmdStanPy interface to
+Stan using NumPy, pandas, and plotnine.   The first step is to import
+these libraries, configure logger to only report errors, and set a
+random seed for NumPy.
+
+```{python}
+#| code-fold: true
+import logging
+import scipy as sp
+import numpy as np
+import pandas as pd
+import plotnine as pn
+import cmdstanpy as csp
+
+pd.set_option('display.max_rows', None)  # show whole pandas data frames
+csp.utils.get_logger().setLevel(logging.ERROR)  # only log errors
+
+np.random.seed(12345)   # change seed for fresh simulation
+```
+
+Second, define functions to use later.
+
+```{python}
+def rw_cov_matrix(D, rho):
+    Sigma = np.zeros((D, D))
+    for i in range(D):
+        for j in range(D):
+            Sigma[i, j] = rho ** abs(i - j)
+    return Sigma
+
+def random_predictors(N, D, rho):
+    Sigma = rw_cov_matrix(D, rho)
+    mu = np.zeros(D)
+    x = np.random.multivariate_normal(mu, Sigma, N)
+    for n in range(N):
+        x[n, 1] = 1.0  # intercept
+    return x
+    
+def sq_error(u, v):
+    return sum((u - v)**2)
+
+def fit_bayes(model, data_dict):
+    return model.sample(data = data_dict, show_progress = False,
+                        chains=1, iter_warmup=2000, iter_sampling=2000,
+                        show_console = False, seed=12345, inits = 0)
+
+def fit_bayes_draws(model, data_dict):
+    fit = fit_bayes(model, data_dict)
+    return fit.stan_variable("beta")
+
+def fit_mle(model, data_dict):
+    mle = model.optimize(data = data_dict, show_console = False,
+                         seed=12345)
+    return mle.stan_variable("beta")
+
+def elpd(test_data, fit, model_predict):
+    predict_fit = model_predict.generate_quantities(
+         data = test_data,  previous_fit = fit,
+         show_console = False,  seed = 12345)
+    log_p_draws = predict_fit.stan_variable("log_p")
+    return (sp.special.logsumexp(log_p_draws) - np.log(log_p_draws.size)) / test_data['y'].size
+
+def inv_logit(x):
+    return 1 / (1 + exp(-x))
+
+def add_row(df, beta_hat, beta, estimator, data):
+    return pd.concat([df, pd.DataFrame({'error': (sq_error(beta_hat, beta), ),
+                                        'estimator': (estimator, ),
+                                        'data': (data, )})],
+                         ignore_index=True)
+
+def add_elpd(df, elpd, estimator, data):
+    return pd.concat([df, pd.DataFrame({'ELPD': (elpd, ),
+                                        'estimator': (estimator, ),
+                                        'data': (data, )})],
+                         ignore_index=True)
+```
+
+
+Third, compile the Stan programs introduced in the previous section.
+
+```{python}
+model_logistic = csp.CmdStanModel(stan_file = "logistic-regression.stan")
+model_weighted_logistic = csp.CmdStanModel(stan_file = "weighted-logistic-regression.stan")
+model_log_odds_linear = csp.CmdStanModel(stan_file = "log-odds-linear-regression.stan")
+model_predict = csp.CmdStanModel(stan_file = "logistic-regression-predict.stan")
+```
+
+Fourth, set all the constants determining sizes for the simulation.
+
+```{python}
+# D = 11, N = 500, rho = 0.9 good
+
+D = 32            # number of predictors including intercept
+N = 1024          # number of data points used to train
+rho = 0.9         # correlation of predictor RW covariance
+N_test = 1024     # number of test items
+M = 32            # number of simulation runs
+```
+
+Fifth, allocate a pandas data frame to store the results, then collect
+results `M` iterations.  Within each iteration, generate predictors
+and the various outcomes randomly.  For each of these, calculate the
+penalized MLE and Bayesian posterior mean and add them to the data frame.
+
+```{python}
+def inv_logit(u):
+    return 1 / (1 + np.exp(-u))
+
+df = pd.DataFrame({'error': (), 'estimator': (), 'data': ()})
+for m in range(M):
+    # parameter generation
+    beta = np.random.normal(0, 1, D)
+
+    # Training data generation
+    x = random_predictors(N, D, rho)
+    x[:, 0] = 1  # intercept
+    E_log_odds = np.dot(x, beta)
+    E_y = inv_logit(E_log_odds)
+    y_max = np.where(E_y > 0.5, 1, 0)
+    y_random = np.random.binomial(n=1, p=E_y)
+    p = E_y
+    y_noisy_log_odds = E_log_odds + np.random.normal(0, 1, N)
+    noisy_p = inv_logit(y_noisy_log_odds)
+    data_max = {'D': D, 'N': N, 'x': x, 'y': y_max }
+    data_random = {'D': D, 'N': N, 'x': x, 'y': y_random }
+    data_probs = {'D': D, 'N': N, 'x': x, 'p': p }
+    data_noisy_weights = {'D': D, 'N': N, 'x': x, 'p': noisy_p}
+
+    # Penalized MLE
+    mle_max = fit_mle(model_logistic, data_max)
+    mle_random = fit_mle(model_logistic, data_random)
+    mle_probs = fit_mle(model_weighted_logistic, data_probs)
+    mle_weights = fit_mle(model_log_odds_linear, data_probs)
+    mle_noisy = fit_mle(model_log_odds_linear, data_noisy_weights)
+    df = add_row(df, mle_max, beta, "MLE", "max prob")        
+    df = add_row(df, mle_random, beta, "MLE", "random")        
+    df = add_row(df, mle_probs, beta, "MLE", "weighted")        
+    df = add_row(df, mle_weights, beta, "MLE", "log odds")
+    df = add_row(df, mle_noisy, beta, "MLE", "noisy odds")        
+
+    # Bayesian
+    beta_draws_max = fit_bayes_draws(model_logistic, data_max)
+    beta_draws_random = fit_bayes_draws(model_logistic, data_random)
+    beta_draws_probs = fit_bayes_draws(model_weighted_logistic, data_probs)
+    beta_draws_weights = fit_bayes_draws(model_log_odds_linear, data_probs)
+    beta_draws_noisy_weights = fit_bayes_draws(model_log_odds_linear, data_noisy_weights)
+    mean_max = np.zeros(D)
+    mean_random = np.zeros(D)
+    mean_probs = np.zeros(D)
+    mean_weights = np.zeros(D)
+    mean_noisy = np.zeros(D)
+    for d in range(D):
+        mean_max[d] = np.mean(beta_draws_max[:, d])
+        mean_random[d] = np.mean(beta_draws_random[:, d])
+        mean_probs[d] = np.mean(beta_draws_probs[:, d])
+        mean_weights[d] = np.mean(beta_draws_weights[:, d])
+        mean_noisy[d] = np.mean(beta_draws_noisy_weights[:, d])
+    df = add_row(df, mean_max, beta, "Bayes", "max prob")        
+    df = add_row(df, mean_random, beta, "Bayes", "random")        
+    df = add_row(df, mean_probs, beta, "Bayes", "weighted")        
+    df = add_row(df, mean_weights, beta, "Bayes", "log odds")        
+    df = add_row(df, mean_noisy, beta, "Bayes", "noisy odds")
+```
+
+Finally, print the results as a table with a custom reporter for
+means, 0.1, 0.5 (median), 0.9 quantiles, and the minimum and maximum,
+rounding to a single decimal place.
+
+```{python}
+def summary(x):
+    return pd.Series({
+        'mean': np.mean(x),
+        '10%': np.quantile(x, 0.1),
+        'median': np.quantile(x, 0.5),
+        '90%': np.quantile(x, 0.9),
+        'min': np.min(x),
+        'max': np.max(x)
+    })
+
+summary_table = df.groupby(['estimator','data'])['error'].apply(summary).unstack()
+print(summary_table.round(1))
+```
+
+Here's a box and whisker plot of the results.
+
+```{python}
+plot_whisker = ( pn.ggplot(df, pn.aes(x='data', y='error', fill='data'))
+    + pn.geom_boxplot()
+    + pn.facet_grid('. ~ estimator')
+    + pn.aes(group='data')
+    + pn.scale_y_log10()
+    + pn.theme(figure_size=(10, 5)) )
+print(plot_whisker)
+```
+
+The simulations clearly show that training with logit-transformed
+probabilities is the most effective, followed by noisy
+logit-transformed probabilities and weighted training, followed by
+random sampling, and finally, far behind, taking the most probable
+category.
+
+The penalized maximum likelihood estimator is better at handling the
+most probable category sampling, but is otherwise similar or slightly
+trails the Bayesian estimator.
+
+
+## Evaluation of predictive inference
+
+For evaluation of both fully Bayesian and plug-in inference, the
+following Stan model suffices.
+
+```{.stan include="logistic-regression-predict.stan"
+          filename="logistic-regression-predict.stan"}
+```
+
+The data includes both the test covariates and the test outcomes.  The
+parameters are the same as in the models for training.  For predictive
+inference, the model block is replaced with a generated quantities
+block that assigns the log density of the data given the parameters to
+the variable `log_p_t`.
+
+The evaluation follows the earlier evaluation, only we now measure
+predictive accuracy rather than estimation accuracy.  
+
+```{python}
+df_predict = pd.DataFrame({'ELPD': (), 'estimator': (), 'data': ()})
+for m in range(M):
+    beta = np.random.normal(0, 1, D)
+
+    # Training data generation
+    x = random_predictors(N, D, rho)
+    E_log_odds = np.dot(x, beta)
+    E_y = inv_logit(E_log_odds)
+    y_max = np.where(E_y > 0.5, 1, 0)
+    y_random = np.random.binomial(n=1, p=E_y)
+    noisy_E_log_odds = E_log_odds + np.random.normal(0, 1, N)
+    noisy_E_y = inv_logit(noisy_E_log_odds)
+    data_max = {'D': D, 'N': N, 'x': x, 'y': y_max }
+    data_random = {'D': D, 'N': N, 'x': x, 'y': y_random }
+    data_probs = {'D': D, 'N': N, 'x': x, 'p': E_y }
+    data_noisy_weights = {'D': D, 'N': N, 'x': x, 'p': noisy_E_y}
+
+    # Test data generation
+    x_test = random_predictors(N_test, D, rho)
+    E_y_test = inv_logit(np.dot(x_test, beta))
+    y_test = np.random.binomial(n = 1, p = E_y_test)
+
+    # Penalized MLE fit
+    mle_max = fit_mle(model_logistic, data_max)
+    mle_random = fit_mle(model_logistic, data_random)
+    mle_probs = fit_mle(model_weighted_logistic, data_probs)
+    mle_weights = fit_mle(model_log_odds_linear, data_probs)
+    mle_noisy = fit_mle(model_log_odds_linear, data_noisy_weights)
+
+    # Penalized MLE prediction
+    lp_mle_max = sp.stats.bernoulli.logpmf(y_test, inv_logit(np.dot(x_test, mle_max))).sum()
+    lp_mle_random = sp.stats.bernoulli.logpmf(y_test,  inv_logit(np.dot(x_test, mle_random))).sum()
+    lp_mle_probs = sp.stats.bernoulli.logpmf(y_test, inv_logit(np.dot(x_test, mle_probs))).sum()
+    lp_mle_weights = sp.stats.bernoulli.logpmf(y_test, inv_logit(np.dot(x_test, mle_weights))).sum()
+    lp_mle_noisy_weights = sp.stats.bernoulli.logpmf(y_test, inv_logit(np.dot(x_test, mle_noisy))).sum()
+
+    log_Pr_rate_max = lp_mle_max / N_test
+    log_Pr_rate_random = lp_mle_random / N_test
+    log_Pr_rate_probs = lp_mle_probs / N_test
+    log_Pr_rate_weights = lp_mle_weights / N_test
+    log_Pr_rate_noisy_weights = lp_mle_noisy_weights / N_test
+
+    df_predict = add_elpd(df_predict, log_Pr_rate_max, "MLE", "max prob")
+    df_predict = add_elpd(df_predict, log_Pr_rate_random, "MLE", "random")
+    df_predict = add_elpd(df_predict, log_Pr_rate_probs, "MLE", "weighted")
+    df_predict = add_elpd(df_predict, log_Pr_rate_weights, "MLE", "log odds")
+    df_predict = add_elpd(df_predict, log_Pr_rate_noisy_weights, "MLE", "noisy odds")
+
+    # Bayesian fit
+    fit_max = fit_bayes(model_logistic, data_max)
+    fit_random = fit_bayes(model_logistic, data_random)
+    fit_probs = fit_bayes(model_weighted_logistic, data_probs)
+    fit_weights = fit_bayes(model_log_odds_linear, data_probs)
+    fit_noisy_weights = fit_bayes(model_log_odds_linear, data_noisy_weights)
+
+    # Bayesian prediction
+    test_data = {'D': D, 'N': N_test, 'x': x_test, 'y': y_test}
+    elpd_max = elpd(test_data, fit_max, model_predict)
+    elpd_random = elpd(test_data, fit_random, model_predict)
+    elpd_probs = elpd(test_data, fit_probs, model_predict)
+    elpd_weights = elpd(test_data, fit_weights, model_predict)
+    elpd_noisy_weights = elpd(test_data, fit_noisy_weights, model_predict)
+    df_predict = add_elpd(df_predict, elpd_max, "Bayes", "max prob")
+    df_predict = add_elpd(df_predict, elpd_random, "Bayes", "random")
+    df_predict = add_elpd(df_predict, elpd_probs, "Bayes", "weighted")
+    df_predict = add_elpd(df_predict, elpd_weights, "Bayes", "log odds")
+    df_predict = add_elpd(df_predict, elpd_noisy_weights, "Bayes", "noisy odds")
+```
+
+After building up the results, the results can be summarized with a
+pandas one-liner.  In what follows, higher ELPD is better---it means
+assigning a higher probability to the observed outcomes.
+
+```{python}
+summary_table_predict = df_predict.groupby(['estimator','data'])['ELPD'].apply(summary).unstack()
+print(summary_table_predict.round(2))
+```
+
+And here's the plot, where larger numbers are also better.
+
+
+```{python}
+plot_whisker_predict = (
+    pn.ggplot(df_predict, pn.aes(x='data', y='ELPD', fill='data'))
+    + pn.geom_boxplot()
+    + pn.facet_grid('. ~ estimator')
+    + pn.aes(group='data')
+    + pn.theme(figure_size=(10, 5)) )
+print(plot_whisker_predict)
+```
+
+
+# Further reading
+
+**Logistic regression:** @gelman2020 provide a detailed, practical
+introduction to regression modeling.  For a more Bayesian perspective,
+see @gelman2013.
+
+**Probabilistic training:** @smyth1994 is the first example of which
+I'm aware of jointly training a classifier and a crowdsourcing model.
+@raykar2010 performs joint training in a logistic regression setting
+using Dawid and Skene's model.
+
+**Calibration and scoring metrics:** @gneiting2007 and @gneiting2007b
+provide an excellent overview of proper scoring metrics and calibrated
+prediction, respectively.
+
+**Rating models:** @dawid1979 first modeled crowdsourcing as noisy
+raters providing measurements conditioned on the true value.  In a
+binary task, each rater's sensitivity and specificity is estimated, as
+is the prevalence of successful (1) outcomes, which allows a
+probabilistic assignment of category to each item.  It is
+straightforward to extend Dawid and Skene's model to a Bayesian
+hierarchical model as shown by @paun2018 and in the "Latent discrete
+parameters" chapter of the *Stan User's Guide.* @passonneau2014
+provide a high-level motivation and analysis of rating versus weighted
+voting or inter-annotator agreement measures.  There is a rich
+literature on similar models in epidemiology (diagnostic testing
+without a gold standard), educational testing (exam grading without an
+answer key), and anthropology (cultural consensus theory).
+
+**Stan:** The Stan *Reference Manual,* by the @stan2023, describes the
+Stan programming language.  The *User's Guide,* by the @stan2023b,
+describes how to use the Stan language to code statistical models,
+including both hierarchical logistic regression and the Dawid and
+Skene crowdsourcing model.
+
+
+# Conclusions
+
+If you have a data set with probabilistic labels, the best thing to do
+is to train with those probabilities.  In the case of logistic
+regression, you can go one step better by log odds transforming the
+probabilities and directly training a linear regression.  If you are
+restricted to estimation (training) software that can only handle
+deterministic categories, then the best thing to do is to sample the
+categories randomly given the probabilities.  Whatever you do, do not
+take the most probable category or use majority voting for
+crowdsourcing.
+
+### Appendix: System settings
+
+The system and operating system are as follows.
+```{python}
+import sys
+import platform
+
+print("\nSystem")
+print(sys.version)
+
+print("\nOperating System")
+print(f"""  {platform.system() = }
+  {platform.release() = }
+  {platform.version() = }""")
+```
+
+The installed packages (i.e., the working set) is as follows.
+```{python}
+import pkg_resources
+
+print("\nInstalled packages:")
+for dist in pkg_resources.working_set:
+    print(dist)
+```
